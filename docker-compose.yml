@@ -17,7 +17,8 @@ services:
     volumes:
       - ./backend:/usr/src/app
       - backend_node_modules:/usr/src/app/node_modules
-    
+    environment:
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     depends_on:
       - mongo
     restart: unless-stopped
