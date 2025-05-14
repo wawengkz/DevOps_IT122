@@ -28,10 +28,33 @@ mongoose.connect('mongodb://mongo:27017/brainbytes', {
 const messageSchema = new mongoose.Schema({
     text: String,
     isUser: { type: Boolean, default: true },
-    createdAt: { type: Date, default: Date.now }
+    createdAt: { type: Date, default: Date.now },
+    category: String,  // Add this line to store the category
+    questionType: String  // Optional: store question type too
 });
 
 const Message = mongoose.model('Message', messageSchema);
+
+// Define User Profile Schema
+const userProfileSchema = new mongoose.Schema({
+    name: String,
+    email: { type: String, unique: true, required: true },
+    preferredSubjects: [String],
+    createdAt: { type: Date, default: Date.now }
+});
+
+const UserProfile = mongoose.model('UserProfile', userProfileSchema);
+
+// Define Learning Materials Schema
+const learningMaterialSchema = new mongoose.Schema({
+    subject: { type: String, required: true },
+    topic: { type: String, required: true },
+    content: { type: String, required: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'UserProfile' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const LearningMaterial = mongoose.model('LearningMaterial', learningMaterialSchema);
 
 // API Routes
 app.get('/', (req, res) => {
@@ -77,7 +100,9 @@ app.post('/api/messages', async (req, res) => {
         // Save AI response
         const aiMessage = new Message({
             text: aiResult.response,
-            isUser: false
+            isUser: false,
+            category: aiResult.category,  // Add this line
+            questionType: aiResult.questionType  // Optional
         });
         await aiMessage.save();
 
@@ -93,9 +118,112 @@ app.post('/api/messages', async (req, res) => {
     }
 });
 
+// User Profile CRUD Operations
+app.post('/api/users', async (req, res) => {
+    try {
+        const newUser = new UserProfile(req.body);
+        const result = await newUser.save();
+        res.json({ success: true, user: result });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/users', async (req, res) => {
+    try {
+        const users = await UserProfile.find();
+        res.json({ success: true, users });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const user = await UserProfile.findById(req.params.id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        res.json({ success: true, user });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.put('/api/users/:id', async (req, res) => {
+    try {
+        const user = await UserProfile.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        res.json({ success: true, user });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+    try {
+        const user = await UserProfile.findByIdAndDelete(req.params.id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        res.json({ success: true, message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Learning Materials CRUD Operations
+app.post('/api/materials', async (req, res) => {
+    try {
+        const newMaterial = new LearningMaterial(req.body);
+        const result = await newMaterial.save();
+        res.json({ success: true, material: result });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/materials', async (req, res) => {
+    try {
+        // Allow filtering by subject
+        const filter = {};
+        if (req.query.subject) filter.subject = req.query.subject;
+        if (req.query.topic) filter.topic = req.query.topic;
+        
+        const materials = await LearningMaterial.find(filter);
+        res.json({ success: true, materials });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/materials/:id', async (req, res) => {
+    try {
+        const material = await LearningMaterial.findById(req.params.id);
+        if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+        res.json({ success: true, material });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.put('/api/materials/:id', async (req, res) => {
+    try {
+        const material = await LearningMaterial.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+        res.json({ success: true, material });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.delete('/api/materials/:id', async (req, res) => {
+    try {
+        const material = await LearningMaterial.findByIdAndDelete(req.params.id);
+        if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+        res.json({ success: true, message: 'Material deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
-  
-    
