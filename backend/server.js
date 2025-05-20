@@ -29,8 +29,11 @@ const messageSchema = new mongoose.Schema({
     text: String,
     isUser: { type: Boolean, default: true },
     createdAt: { type: Date, default: Date.now },
-    category: String,  // Add this line to store the category
-    questionType: String  // Optional: store question type too
+    category: String,  // Subject category (math, science, history)
+    questionType: String,  // Type of question (definition, explanation, etc.)
+    followUpQuestions: [String], // Array of suggested follow-up questions
+    isFollowUp: { type: Boolean, default: false }, // Whether this is a follow-up response
+    sentiment: String // User's detected sentiment
 });
 
 const Message = mongoose.model('Message', messageSchema);
@@ -74,18 +77,24 @@ app.get('/api/messages', async (req, res) => {
 // Create a new message and get AI response
 app.post('/api/messages', async (req, res) => {
     try {
+        // Get user ID (from request or use anonymous)
+        const userId = req.body.userId || 'anonymous';
+        console.log(`Processing message for user: ${userId}`);
+
         // Save user message
         const userMessage = new Message({
             text: req.body.text,
             isUser: true
         });
         await userMessage.save();
+
         // Generate AI response with a 15-second overall timeout
         const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Request timeout')), 15000)
         );
 
-        const aiResultPromise = aiService.generateResponse(req.body.text);
+        // Pass the userId to maintain conversation context
+        const aiResultPromise = aiService.generateResponse(req.body.text, userId);
 
         // Race between the AI response and the timeout
         const aiResult = await Promise.race([aiResultPromise, timeoutPromise])
@@ -93,24 +102,32 @@ app.post('/api/messages', async (req, res) => {
                 console.error('AI response timed out or failed:', error);
                 return {
                     category: 'error',
-                    response: "I'm sorry, but I couldn't process your request in time. Please try again with a simpler question."
+                    response: "I'm sorry, but I couldn't process your request in time. Please try again with a simpler question.",
+                    followUpQuestions: [],
+                    isFollowUp: false,
+                    questionType: 'error',
+                    sentiment: 'neutral'
                 };
             });
 
-        // Save AI response
+        console.log(`AI response generated: Category=${aiResult.category}, IsFollowUp=${aiResult.isFollowUp}, QuestionType=${aiResult.questionType}`);
+        
+        // Save AI response with all new properties
         const aiMessage = new Message({
             text: aiResult.response,
             isUser: false,
-            category: aiResult.category,  // Add this line
-            questionType: aiResult.questionType  // Optional
+            category: aiResult.category,
+            questionType: aiResult.questionType,
+            followUpQuestions: aiResult.followUpQuestions || [],
+            isFollowUp: aiResult.isFollowUp || false,
+            sentiment: aiResult.sentiment || 'neutral'
         });
         await aiMessage.save();
 
-        // Return both messages
+        // Return both messages with all properties
         res.status(201).json({
             userMessage,
-            aiMessage,
-            category: aiResult.category
+            aiMessage
         });
     } catch (err) {
         console.error('Error in /api/messages route:', err);
