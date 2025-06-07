@@ -4,12 +4,21 @@
     "description": "Backend API for BrainBytes",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js"
+        "start": "node server.js",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "test:api": "jest tests/api.test.js",
+        "test:db": "jest tests/db-persistence.test.js"
     },
     "dependencies": {
         "cors": "^2.8.5",
         "express": "^4.17.1",
         "mongoose": "^8.14.2",
         "node-fetch": "^2.6.7"
+    },
+    "devDependencies": {
+        "jest": "^29.7.0",
+        "supertest": "^7.1.1"
     }
 }
