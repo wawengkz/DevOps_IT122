@@ -1,0 +1,41 @@
+name: Matrix Testing
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+
+jobs:
+  # Matrix Build Strategy
+  build-test-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [14.x, 16.x, 18.x]
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Node.js (Matrix Version)
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # Step 3: Install and Test
+      - name: Install dependencies
+        run: npm ci
+
+      # Step 4: Run Tests
+      - name: Run tests
+        run: npm test
+
+      # Step 5: Upload Coverage
+      - name: Upload coverage
+        uses: codecov/codecov-action@v2
+        with:
+          file: ./coverage/lcov.info

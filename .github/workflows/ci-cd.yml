@@ -1,0 +1,124 @@
+name: BrainBytes CI
+
+# Event Triggers
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+
+# Environment Variables (Global)
+env:
+  NODE_ENV: production
+
+jobs:
+  # Build Job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          cd backend && npm ci
+          cd ../frontend && npm ci
+
+      # Step 4: Build application
+      - name: Build application
+        run: |
+          cd frontend && npm run build
+
+      # Step 5: Upload build artifacts
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: dist
+          path: frontend/dist/
+
+  # Test Job (depends on build)
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          cd backend && npm ci
+          cd ../frontend && npm ci
+          cd ../e2e && npm ci
+
+      # Step 4: Run tests
+      - name: Run tests
+        run: |
+          cd backend && npm test
+          cd ../frontend && npm test
+          cd ../e2e && npm test
+
+  # Security Scanning Job
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Run Trivy Security Scanner
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'user/app:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  # Code Quality Checks
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Run Super Linter
+      - name: Run Super-Linter
+        uses: github/super-linter@v4
+        env:
+          VALIDATE_ALL_CODEBASE: true
+
+  # Deploy Job (only on main branch)
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build, test, security-scan]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Deploy to Production
+      - name: Deploy to Production
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+        run: ./deploy.sh
