@@ -28,8 +28,10 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: 'backend/package-lock.json'
 
-    - name: Install dependencies
+    - name: Install backend dependencies
+      working-directory: ./backend
       run: npm ci
 
     - name: Wait for MongoDB
@@ -38,7 +40,8 @@ jobs:
         sleep 15
         echo "MongoDB should be ready now!"
 
-    - name: Run tests
+    - name: Run backend tests
+      working-directory: ./backend
       env:
         NODE_ENV: test
         MONGODB_URI: mongodb://localhost:27017/brainbytes_test
@@ -57,11 +60,14 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: 'backend/package-lock.json'
 
-    - name: Install dependencies
+    - name: Install backend dependencies
+      working-directory: ./backend
       run: npm ci
 
-    - name: Run linting
+    - name: Run backend linting
+      working-directory: ./backend
       run: npm run lint || echo "Linting completed"
 
   build:
@@ -77,9 +83,12 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: 'backend/package-lock.json'
 
-    - name: Install dependencies
+    - name: Install backend dependencies
+      working-directory: ./backend
       run: npm ci
 
-    - name: Build application
-      run: echo "Build completed successfully"
+    - name: Build backend application
+      working-directory: ./backend
+      run: echo "Backend build completed successfully"
