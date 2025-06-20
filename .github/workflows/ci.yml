@@ -1,0 +1,121 @@
+name: BrainBytes CI
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+
+# Add environment variables at workflow level
+env:
+  NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+  HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+  PORT: 3000
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongo:
+        image: mongo:4.4
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+          
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+        
+      - name: Run backend tests
+        working-directory: ./backend
+        run: npm test
+        env:
+          HUGGINGFACE_TOKEN: ${{ env.HUGGINGFACE_TOKEN }}
+          NODE_ENV: test
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+          
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+        
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          NODE_ENV: ${{ env.NODE_ENV }}
+        
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: npm test
+        env:
+          NODE_ENV: ${{ env.NODE_ENV }}
+
+  test-e2e:
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'e2e/package-lock.json'
+          
+      - name: Start services with Docker Compose
+        run: |
+          echo "HUGGINGFACE_TOKEN=${{ env.HUGGINGFACE_TOKEN }}" > .env
+          echo "NODE_ENV=${{ env.NODE_ENV }}" >> .env
+          echo "PORT=${{ env.PORT }}" >> .env
+          docker-compose up -d
+          
+      - name: Wait for services to be ready
+        run: |
+          sleep 30
+          curl --retry 10 --retry-delay 5 --retry-connrefused http://localhost:${{ env.PORT }}/
+          curl --retry 10 --retry-delay 5 --retry-connrefused http://localhost:8080/
+          
+      - name: Install E2E test dependencies
+        working-directory: ./e2e
+        run: npm ci
+        
+      - name: Run E2E tests
+        working-directory: ./e2e
+        run: npm run test:headless
+        env:
+          NODE_ENV: ${{ env.NODE_ENV }}
+        
+      - name: Stop services
+        run: docker-compose down
