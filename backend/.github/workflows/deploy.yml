@@ -1,0 +1,37 @@
+# .github/workflows/deploy.yml
+name: Deploy BrainBytes
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /path/to/brainbytes
+            git pull origin main
+            echo "HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}" > .env
+            echo "NODE_ENV=production" >> .env
+            echo "PORT=3000" >> .env
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d
+            
+      - name: Health check
+        run: |
+          sleep 30
+          curl -f ${{ secrets.PROD_URL }}/api/health || exit 1
