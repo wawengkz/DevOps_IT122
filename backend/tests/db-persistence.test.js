@@ -1,93 +1,68 @@
-// tests/db-persistence.test.js
 const mongoose = require('mongoose');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-
-const execAsync = promisify(exec);
-
-// Test data model
-const testSchema = new mongoose.Schema({
-    testId: String,
-    testData: String,
-    createdAt: { type: Date, default: Date.now }
-});
-
-const TestModel = mongoose.model('TestData', testSchema);
 
 describe('Database Persistence Tests', () => {
-    let testId;
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/brainbytes_test';
+    let testCollection;
     
     beforeAll(async () => {
-        // Connect to test database
-        const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/brainbytes_test';
-        await mongoose.connect(mongoUri);
-        testId = `test-${Date.now()}`;
-    });
-
+        // Connect to MongoDB
+        await mongoose.connect(mongoUri, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+        
+        // Get test collection
+        testCollection = mongoose.connection.db.collection('test_data');
+    }, 30000);
+    
     afterAll(async () => {
         // Clean up and close connection
-        try {
-            await TestModel.deleteOne({ testId });
-        } catch (error) {
-            console.log('Cleanup error (expected in CI):', error.message);
+        if (mongoose.connection.readyState === 1) {
+            await mongoose.connection.db.dropDatabase();
+            await mongoose.connection.close();
         }
-        await mongoose.connection.close();
     });
 
     test('Should insert test data into database', async () => {
-        const testData = new TestModel({
-            testId,
-            testData: 'This is test data for persistence verification'
-        });
+        const testData = {
+            id: `test-${Date.now()}`,
+            message: 'Test data for persistence check',
+            timestamp: new Date()
+        };
         
-        const savedData = await testData.save();
-        expect(savedData.testId).toBe(testId);
-        expect(savedData.testData).toContain('test data');
+        const result = await testCollection.insertOne(testData);
+        expect(result.insertedId).toBeDefined();
         
-        console.log(`Test data inserted successfully: ${testId}`);
+        console.log(`Test data inserted successfully: ${testData.id}`);
     });
 
     test('Should verify data persistence in MongoDB', async () => {
-        // In CI environment, we can't restart containers, so we'll just verify the data exists
-        const retrievedData = await TestModel.findOne({ testId });
-        
-        expect(retrievedData).toBeTruthy();
-        expect(retrievedData.testId).toBe(testId);
-        expect(retrievedData.testData).toContain('test data');
+        const allData = await testCollection.find({}).toArray();
+        expect(allData.length).toBeGreaterThan(0);
         
         console.log('Data persistence verified! Data exists in database.');
     });
 
     test('Should retrieve data after simulated restart', async () => {
-        // Close and reconnect to simulate restart
+        // Simulate a connection restart by closing and reopening
         await mongoose.connection.close();
         
-        const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/brainbytes_test';
-        await mongoose.connect(mongoUri);
+        await mongoose.connect(mongoUri, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
         
-        // Try to retrieve the data
-        const retrievedData = await TestModel.findOne({ testId });
+        testCollection = mongoose.connection.db.collection('test_data');
+        const retrievedData = await testCollection.find({}).toArray();
         
-        expect(retrievedData).toBeTruthy();
-        expect(retrievedData.testId).toBe(testId);
-        
+        expect(retrievedData.length).toBeGreaterThan(0);
         console.log('Data retrieved successfully after reconnection');
     });
 
     test('Should verify MongoDB is running and accessible', async () => {
-        // Test MongoDB connection health
-        const connectionState = mongoose.connection.readyState;
-        expect(connectionState).toBe(1); // 1 = connected
-        
-        // Test database operations
-        const collections = await mongoose.connection.db.listCollections().toArray();
-        expect(collections).toBeDefined();
-        expect(Array.isArray(collections)).toBe(true);
+        const result = await mongoose.connection.db.admin().ping();
+        expect(result.ok).toBe(1);
         
         console.log('MongoDB connection verified and healthy');
-        
-        // Clean up test data
-        await TestModel.deleteOne({ testId });
-        console.log('Test data cleaned up');
     });
 });

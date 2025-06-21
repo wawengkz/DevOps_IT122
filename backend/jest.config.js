@@ -1,18 +1,23 @@
 module.exports = {
   testEnvironment: 'node',
-  testTimeout: 30000,
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  testMatch: [
-    '<rootDir>/tests/**/*.test.js'
+  testMatch: ['<rootDir>/tests/**/*.test.js'],
+  collectCoverageFrom: [
+    '**/*.js',
+    '!node_modules/**',
+    '!tests/**',
+    '!coverage/**'
   ],
+  coverageDirectory: 'coverage',
   verbose: true,
-  collectCoverage: false,
-  // Make tests more forgiving in CI environment
-  bail: 0, // Don't stop on first failure
-  maxWorkers: 1, // Run tests sequentially to avoid DB conflicts
-  // Add retry for flaky tests
-  retryTimes: 1,
-  // Ensure proper cleanup
-  clearMocks: true,
-  restoreMocks: true
+  forceExit: true,
+  detectOpenHandles: true,
+  testTimeout: 30000,
+  
+  // Remove the invalid retryTimes - use jest-retry instead if needed
+  // For Jest 27+, use this instead:
+  // testRetries: 1,
+  
+  // Environment variables for testing
+  setupFiles: ['<rootDir>/tests/test-env.js']
 };
