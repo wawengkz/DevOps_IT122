@@ -13,10 +13,10 @@ app.use(express.json());
 // Initialize AI model
 aiService.initializeAI();
 
-// Connect to MongoDB
-mongoose.connect('mongodb://mongo:27017/brainbytes', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+// Connect to MongoDB with modern configuration (removes deprecation warnings)
+const mongoUri = process.env.MONGODB_URI || 'mongodb://mongo:27017/brainbytes';
+mongoose.connect(mongoUri, {
+    // Removed deprecated options: useNewUrlParser, useUnifiedTopology
     retryWrites: true
 }).then(() => {
     console.log('Connected to MongoDB');
@@ -62,6 +62,15 @@ const LearningMaterial = mongoose.model('LearningMaterial', learningMaterialSche
 // API Routes
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the BrainBytes API' });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    });
 });
 
 // Get all messages
@@ -241,6 +250,19 @@ app.delete('/api/materials/:id', async (req, res) => {
 });
 
 // Start the server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    server.close(() => {
+        console.log('Process terminated');
+        mongoose.connection.close(false, () => {
+            process.exit(0);
+        });
+    });
+});
+
+module.exports = app; // Export for testing
