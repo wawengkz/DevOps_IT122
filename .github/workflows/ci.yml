@@ -33,7 +33,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'backend/package-lock.json'
           
+      # Skip dependency installation if cache hit
+      - name: Cache node modules
+        uses: actions/cache@v3
+        id: npm-cache
+        with:
+          path: backend/node_modules
+          key: ${{ runner.os }}-backend-${{ hashFiles('backend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-backend-
+          
       - name: Install backend dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
         working-directory: ./backend
         run: |
           # Check if package-lock.json exists and is in sync
@@ -51,6 +62,8 @@ jobs:
         run: npm test
         env:
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          GITHUB_ACTIONS: true
+          MONGODB_URI: mongodb://localhost:27017/brainbytes_test
           NODE_ENV: test
 
   test-frontend:

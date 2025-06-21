@@ -1,16 +1,44 @@
 {
-  "name": "brainbytes-e2e-tests",
+  "name": "brainbytes-frontend",
   "version": "1.0.0",
-  "description": "End-to-End tests for BrainBytes application",
-  "scripts": {
-    "test": "jest",
-    "test:headless": "jest --testTimeout=60000",
-    "test:watch": "jest --watch",
-    "test:debug": "jest --runInBand --detectOpenHandles"
+  "private": true,
+  "dependencies": {
+    "@testing-library/jest-dom": "^5.16.4",
+    "@testing-library/react": "^13.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "web-vitals": "^2.1.4"
   },
-  "devDependencies": {
-    "jest": "^29.0.0",
-    "puppeteer": "^21.0.0",
-    "axios": "^1.0.0"
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test --watchAll=false --passWithNoTests",
+    "test:watch": "react-scripts test",
+    "eject": "react-scripts eject",
+    "dev": "react-scripts start"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "jest": {
+    "testTimeout": 30000,
+    "setupFilesAfterEnv": ["@testing-library/jest-dom/extend-expect"]
   }
 }

@@ -1,27 +1,25 @@
 
 module.exports = {
   testEnvironment: 'node',
-  testTimeout: 60000,
-  verbose: true,
-  testMatch: [
-    '<rootDir>/tests/**/*.test.js'
-  ],
-  // Remove the deprecated retryTimes option
-  // Use testRetries instead if you need retry functionality
-  // testRetries: 1,
-  
-  // Setup and teardown
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  
-  // Coverage settings (optional)
-  collectCoverage: false,
+  testMatch: ['<rootDir>/tests/**/*.test.js'],
   collectCoverageFrom: [
     '**/*.js',
-    '!**/node_modules/**',
-    '!**/tests/**'
+    '!node_modules/**',
+    '!tests/**',
+    '!coverage/**'
   ],
-  
-  // Handle async operations better
+  coverageDirectory: 'coverage',
+  verbose: true,
+  forceExit: true,
   detectOpenHandles: true,
-  forceExit: true
+  testTimeout: 60000,
+  // Remove the invalid retryTimes option
+  // retryTimes: 1,  // This was causing the warning
+  
+  // Add proper retry configuration
+  testRetries: 1,
+  
+  // Environment variables for testing
+  setupFiles: ['<rootDir>/tests/test-env.js']
 };
