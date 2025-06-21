@@ -7,7 +7,7 @@ services:
       - ./frontend:/usr/src/app
       - frontend_node_modules:/usr/src/app/node_modules
     depends_on:
-      - backend
+      - backend  # Simple dependency without health check
     restart: unless-stopped
 
   backend:
@@ -19,8 +19,10 @@ services:
       - backend_node_modules:/usr/src/app/node_modules
     environment:
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - NODE_ENV=${NODE_ENV:-development}
+      - MONGODB_URI=mongodb://mongo:27017/brainbytes
     depends_on:
-      - mongo
+      - mongo  # Simple dependency without health check
     restart: unless-stopped
 
   mongo:
@@ -29,10 +31,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=brainbytes
     restart: unless-stopped
 
 volumes:
   mongo-data:
   backend_node_modules:
   frontend_node_modules:
-

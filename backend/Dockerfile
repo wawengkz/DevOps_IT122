@@ -1,6 +1,6 @@
 # BACKEND DOCKERFILE (Secure Version)
 # File: backend/Dockerfile
-FROM node:16-alpine
+FROM node:18-alpine
 
 # Create app directory
 WORKDIR /usr/src/app
