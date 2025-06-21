@@ -1,17 +1,24 @@
 {
-    "name": "brainbytes-frontend",
-    "version": "1.0.0",
-    "description": "Frontend for BrainBytes",
-    "scripts": {
-      "dev": "next dev",
-      "build": "next build",
-      "start": "next start"
-    },
-    "dependencies": {
-      "next": "^12.0.0",
-      "react": "^17.0.2",
-      "react-dom": "^17.0.2",
-      "axios": "^0.24.0"
-    }
+  "name": "brainbytes-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "next": "13.4.12",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "axios": "^1.4.0"
+  },
+  "devDependencies": {
+    "jest": "^29.6.2",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/jest-dom": "^5.16.4",
+    "cross-env": "^7.0.3"
   }
-  
+}
