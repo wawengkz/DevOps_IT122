@@ -1,94 +1,47 @@
-name: BrainBytes CI/CD Pipeline
 
 on:
   push:
     branches: [ main, development ]
   pull_request:
-    branches: [ main ]
-
-env:
-  HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+    branches: [ main, development ]
 
 jobs:
   test:
+    name: Run Tests
     runs-on: ubuntu-latest
-    
-    services:
-      mongodb:
-        image: mongo:5.0
-        ports:
-          - 27017:27017
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v2
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: 'backend/package-lock.json'
+      # --- FRONTEND ---
+      - name: Set up Node.js for Frontend
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'npm'
+          cache-dependency-path: ./frontend/package-lock.json
 
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm ci
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm install
+      
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: npm test
 
-    - name: Wait for MongoDB
-      run: |
-        echo "Waiting for MongoDB to start..."
-        sleep 15
-        echo "MongoDB should be ready now!"
+      # --- BACKEND ---
+      - name: Set up Node.js for Backend
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'npm'
+          cache-dependency-path: ./backend/package-lock.json
 
-    - name: Run backend tests
-      working-directory: ./backend
-      env:
-        NODE_ENV: test
-        MONGODB_URI: mongodb://localhost:27017/brainbytes_test
-        HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
-      run: npm test
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm install
 
-  lint:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: 'backend/package-lock.json'
-
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm ci
-
-    - name: Run backend linting
-      working-directory: ./backend
-      run: npm run lint || echo "Linting completed"
-
-  build:
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: 'backend/package-lock.json'
-
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm ci
-
-    - name: Build backend application
-      working-directory: ./backend
-      run: echo "Backend build completed successfully"
+      - name: Run backend tests
+        working-directory: ./backend
+        run: npm test
