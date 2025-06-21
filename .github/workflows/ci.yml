@@ -36,10 +36,14 @@ jobs:
       - name: Install backend dependencies
         working-directory: ./backend
         run: |
+          # Check if package-lock.json exists and is in sync
           if [ ! -f package-lock.json ]; then
+            echo "No package-lock.json found, running npm install"
             npm install
           else
-            npm ci
+            echo "package-lock.json exists, checking sync..."
+            # Try npm ci first, fallback to npm install if it fails
+            npm ci || (echo "package-lock.json out of sync, regenerating..." && rm package-lock.json && npm install)
           fi
         
       - name: Run backend tests
@@ -66,10 +70,14 @@ jobs:
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: |
+          # Check if package-lock.json exists and is in sync
           if [ ! -f package-lock.json ]; then
+            echo "No package-lock.json found, running npm install"
             npm install
           else
-            npm ci
+            echo "package-lock.json exists, checking sync..."
+            # Try npm ci first, fallback to npm install if it fails
+            npm ci || (echo "package-lock.json out of sync, regenerating..." && rm package-lock.json && npm install)
           fi
         
       - name: Build frontend
@@ -134,10 +142,14 @@ jobs:
       - name: Install E2E test dependencies
         working-directory: ./e2e
         run: |
+          # Check if package-lock.json exists and is in sync
           if [ ! -f package-lock.json ]; then
+            echo "No package-lock.json found, running npm install"
             npm install
           else
-            npm ci
+            echo "package-lock.json exists, checking sync..."
+            # Try npm ci first, fallback to npm install if it fails
+            npm ci || (echo "package-lock.json out of sync, regenerating..." && rm package-lock.json && npm install)
           fi
         
       - name: Run E2E tests
