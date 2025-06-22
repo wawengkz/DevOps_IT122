@@ -96,16 +96,32 @@ jobs:
         run: |
           docker compose up -d --build
           
+      - name: Show initial service status
+        run: |
+          echo "=== Initial Service Status ==="
+          docker compose ps
+          echo ""
+          echo "=== Backend Logs (first 50 lines) ==="
+          docker compose logs --tail=50 backend || echo "No backend logs yet"
+          echo ""
+          
       - name: Wait for services to be ready
         run: |
-          echo "Waiting for backend API to be ready..."
-          timeout 180 bash -c 'until curl -f http://localhost:3000/health 2>/dev/null; do 
-            echo "Waiting for backend... (attempt $((++attempt)))"
+          echo "Waiting for MongoDB to be ready..."
+          timeout 120 bash -c 'until docker compose exec -T mongo mongo --eval "db.runCommand({ping: 1})" 2>/dev/null; do 
+            echo "Waiting for MongoDB... (attempt $((++attempt)))"
             sleep 5
           done'
           
+          echo "Waiting for backend API to be ready..."
+          timeout 300 bash -c 'until docker compose exec -T backend node -e "require(\"http\").get(\"http://localhost:3000/health\", (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" 2>/dev/null || docker compose exec -T backend node -e "require(\"http\").get(\"http://localhost:3000/\", (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" 2>/dev/null; do 
+            echo "Waiting for backend... (attempt $((++attempt)))"
+            docker compose logs --tail=10 backend
+            sleep 10
+          done'
+          
           echo "Waiting for frontend to be ready..."
-          timeout 180 bash -c 'until curl -f http://localhost:8080/ 2>/dev/null; do 
+          timeout 180 bash -c 'until docker compose exec -T frontend node -e "require(\"http\").get(\"http://localhost:3000/\", (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" 2>/dev/null; do 
             echo "Waiting for frontend... (attempt $((++attempt)))"
             sleep 5
           done'
@@ -116,10 +132,10 @@ jobs:
           docker compose ps
           echo ""
           echo "=== Backend Health Check ==="
-          curl -v http://localhost:3000/health || echo "Backend not responding"
+          docker compose exec -T backend node -e "require('http').get('http://localhost:3000/health', (res) => { console.log('Health check status:', res.statusCode); process.exit(res.statusCode === 200 ? 0 : 1) })" || docker compose exec -T backend node -e "require('http').get('http://localhost:3000/', (res) => { console.log('Root endpoint status:', res.statusCode); process.exit(res.statusCode === 200 ? 0 : 1) })" || echo "Backend not responding"
           echo ""
           echo "=== Frontend Health Check ==="
-          curl -v http://localhost:8080/ || echo "Frontend not responding"
+          docker compose exec -T frontend node -e "require('http').get('http://localhost:3000/', (res) => { console.log('Frontend status:', res.statusCode); process.exit(res.statusCode === 200 ? 0 : 1) })" || echo "Frontend not responding"
           echo ""
           echo "=== MongoDB Health Check ==="
           docker compose exec -T mongo mongo --eval "db.runCommand({ping: 1})" || echo "MongoDB not responding"

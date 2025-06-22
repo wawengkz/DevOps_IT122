@@ -1,4 +1,4 @@
-# FRONTEND DOCKERFILE (Secure Version)  
+# FRONTEND DOCKERFILE (Updated for better CI compatibility)
 # File: frontend/Dockerfile
 FROM node:18-alpine
 
@@ -27,8 +27,8 @@ USER nextjs
 # Expose port
 EXPOSE 3000
 
-# Add health check for Next.js app
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+# Add health check with longer startup period for CI (Next.js can take time to start)
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=10 \
     CMD node -e "require('http').get('http://localhost:3000', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
 
 # Start the application

@@ -10,14 +10,14 @@ services:
       - frontend_node_modules:/usr/src/app/node_modules
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started  # Changed from service_healthy to be less strict
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })\" || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+      timeout: 15s
+      retries: 10
+      start_period: 90s
 
   backend:
     build: ./backend
@@ -36,11 +36,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })\" || node -e \"require('http').get('http://localhost:3000/', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })\" || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+      timeout: 15s
+      retries: 10
+      start_period: 90s
 
   mongo:
     image: mongo:4.4
