@@ -4,7 +4,8 @@
   "description": "End-to-end tests for BrainBytes application",
   "main": "index.js",
   "scripts": {
-    "test": "jest --runInBand --detectOpenHandles --forceExit --verbose"
+    "test": "jest --runInBand --detectOpenHandles --forceExit --verbose",
+    "test:headless": "jest --runInBand --detectOpenHandles --forceExit --verbose"
   },
   "devDependencies": {
     "jest": "^29.7.0",
