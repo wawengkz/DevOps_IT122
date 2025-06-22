@@ -1,4 +1,7 @@
-const fetch = require('node-fetch');
+// Remove this line completely:
+// const fetch = require('node-fetch');
+
+// Node.js 18+ has built-in fetch - no import needed!
 
 // Initialize our AI service
 const initializeAI = () => {
@@ -388,6 +391,7 @@ async function generateResponse(question, userId = 'anonymous') {
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
         // Make the API request with authentication and timeout
+        // Using built-in fetch (Node.js 18+) - no import needed!
         const response = await fetch(API_URL, {
             method: "POST",
             signal: controller.signal,
