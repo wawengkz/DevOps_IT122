@@ -1,0 +1,100 @@
+# .github/workflows/quality.yml
+name: BrainBytes Code Quality
+
+on:
+  pull_request:
+    branches: [ main, development ]
+    paths:
+      - 'frontend/**/*.js'
+      - 'frontend/**/*.jsx'
+      - 'frontend/**/*.ts'
+      - 'frontend/**/*.tsx'
+      - 'backend/**/*.js'
+      - 'backend/**/*.ts'
+      - 'e2e/**/*.js'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  code-quality-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+          
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm install --save-dev eslint eslint-plugin-react prettier
+          
+      - name: Run Next.js ESLint on frontend
+        working-directory: ./frontend
+        run: npm run lint
+        
+      - name: Check frontend code formatting with Prettier
+        working-directory: ./frontend
+        run: npx prettier --check "**/*.{js,jsx,ts,tsx,css,json}" --ignore-path .gitignore
+
+  code-quality-backend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+          
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          npm ci
+          npm install --save-dev eslint prettier
+          
+      - name: Run ESLint on backend
+        working-directory: ./backend
+        run: npx eslint --ext .js,.ts .
+        
+      - name: Check backend code formatting with Prettier
+        working-directory: ./backend
+        run: npx prettier --check "**/*.{js,ts,json}"
+
+  code-quality-e2e:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'npm'
+          cache-dependency-path: 'e2e/package-lock.json'
+          
+      - name: Install E2E dependencies
+        working-directory: ./e2e
+        run: |
+          npm ci
+          npm install --save-dev eslint prettier
+          
+      - name: Run ESLint on E2E tests
+        working-directory: ./e2e
+        run: npx eslint --ext .js tests/
+        
+      - name: Check E2E code formatting with Prettier
+        working-directory: ./e2e
+        run: npx prettier --check "tests/**/*.{js,json}"
