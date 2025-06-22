@@ -3,17 +3,16 @@
   "version": "1.0.0",
   "description": "E2E tests for BrainBytes application",
   "scripts": {
-    "test": "jest --runInBand --detectOpenHandles --forceExit",
-    "test:headless": "jest --runInBand --detectOpenHandles --forceExit",
-    "test:watch": "jest --watch",
-    "test:debug": "jest --runInBand --detectOpenHandles --no-cache --verbose"
+    "test": "jest --runInBand --detectOpenHandles --forceExit --verbose",
+    "test:simple": "jest tests/integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:journey": "jest tests/user-journey.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:debug": "jest --runInBand --detectOpenHandles --no-cache --verbose --no-coverage",
+    "test:headless": "jest --runInBand --detectOpenHandles --forceExit --verbose --silent"
   },
   "dependencies": {
-    "puppeteer": "^21.0.0",
     "axios": "^1.4.0"
   },
   "devDependencies": {
-    "jest": "^29.6.2",
-    "@jest/test-sequencer": "^29.6.2"
+    "jest": "^29.6.2"
   }
 }

@@ -1,14 +1,23 @@
+version: '3.8'
+
 services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:3000"
+      - "8080:3000"  # Keep your current mapping
     volumes:
       - ./frontend:/usr/src/app
       - frontend_node_modules:/usr/src/app/node_modules
     depends_on:
-      - backend  # Simple dependency without health check
+      backend:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   backend:
     build: ./backend
@@ -21,9 +30,17 @@ services:
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
       - NODE_ENV=${NODE_ENV:-development}
       - MONGODB_URI=mongodb://mongo:27017/brainbytes
+      - PORT=3000
     depends_on:
-      - mongo  # Simple dependency without health check
+      mongo:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   mongo:
     image: mongo:4.4
@@ -34,6 +51,11 @@ services:
     environment:
       - MONGO_INITDB_DATABASE=brainbytes
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.runCommand({ping: 1})"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   mongo-data:
