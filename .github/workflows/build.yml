@@ -2,11 +2,13 @@ name: BrainBytes Build
 
 on:
   push:
-    branches: [ main, development ]
-  paths-ignore:
-    - '**.md'
-    - 'docs/**'
-  workflow_dispatch:  # Allows manual triggering
+    branches: 
+      - main
+      - development
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -88,7 +90,6 @@ jobs:
             docker logs test-backend 2>/dev/null || echo "No logs available"
           fi
           
-          # Cleanup any remaining containers
           docker stop test-frontend test-backend 2>/dev/null || true
           docker rm test-frontend test-backend 2>/dev/null || true
           
