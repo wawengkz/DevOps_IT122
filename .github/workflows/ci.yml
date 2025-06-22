@@ -94,7 +94,7 @@ jobs:
           
       - name: Start services with Docker Compose
         run: |
-          docker-compose up -d --build
+          docker compose up -d --build
           
       - name: Wait for services to be ready
         run: |
@@ -113,7 +113,7 @@ jobs:
       - name: Verify services are running
         run: |
           echo "=== Docker Compose Services Status ==="
-          docker-compose ps
+          docker compose ps
           echo ""
           echo "=== Backend Health Check ==="
           curl -v http://localhost:3000/health || echo "Backend not responding"
@@ -122,7 +122,7 @@ jobs:
           curl -v http://localhost:8080/ || echo "Frontend not responding"
           echo ""
           echo "=== MongoDB Health Check ==="
-          docker-compose exec -T mongo mongo --eval "db.runCommand({ping: 1})" || echo "MongoDB not responding"
+          docker compose exec -T mongo mongo --eval "db.runCommand({ping: 1})" || echo "MongoDB not responding"
           
       - name: Install E2E test dependencies
         working-directory: ./e2e
@@ -138,14 +138,14 @@ jobs:
         if: failure()
         run: |
           echo "=== Backend Logs ==="
-          docker-compose logs backend
+          docker compose logs backend
           echo ""
           echo "=== Frontend Logs ==="
-          docker-compose logs frontend
+          docker compose logs frontend
           echo ""
           echo "=== MongoDB Logs ==="
-          docker-compose logs mongo
+          docker compose logs mongo
         
       - name: Stop services
         if: always()
-        run: docker-compose down -v
+        run: docker compose down -v
