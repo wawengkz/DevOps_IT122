@@ -1,9 +1,9 @@
 beforeAll(() => {
-  console.log('🧪 Starting API and Database Tests...');
+  console.log("🧪 Starting API and Database Tests...");
 });
 
 afterAll(() => {
-  console.log('✅ Tests completed');
+  console.log("✅ Tests completed");
 });
 
 // Global test timeout
