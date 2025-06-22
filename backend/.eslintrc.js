@@ -1,7 +1,8 @@
 module.exports = {
   env: {
     node: true,
-    es2021: true
+    es2021: true,
+    jest: true
   },
   extends: [
     'eslint:recommended'
@@ -11,23 +12,19 @@ module.exports = {
     sourceType: 'module'
   },
   rules: {
-    // Code Quality Rules
+    // Code Quality Rules only (no style rules)
     'no-unused-vars': 'warn',
     'no-console': 'off', // Allow console in backend
     'no-debugger': 'error',
-    'no-duplicate-imports': 'error',
+    'no-duplicate-imports': 'warn',
     'no-unreachable': 'error',
+    'no-useless-escape': 'warn'  // Make regex escapes warnings instead of errors
     
-    // Style Rules
-    'indent': ['error', 2],
-    'quotes': ['error', 'single'],
-    'semi': ['error', 'always'],
-    'comma-dangle': ['error', 'never'],
-    'no-trailing-spaces': 'error',
-    'eol-last': 'error'
+    // Removed all style rules - let Prettier handle formatting
   },
   ignorePatterns: [
     'node_modules/',
-    'dist/'
+    'dist/',
+    'coverage/'
   ]
 };

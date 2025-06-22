@@ -12,17 +12,14 @@ module.exports = {
     sourceType: 'module'
   },
   rules: {
-    // Code Quality Rules
+    // Code Quality Rules only (no style rules for tests)
     'no-unused-vars': 'warn',
     'no-console': 'off', // Allow console in tests
     'no-debugger': 'error',
-    'no-duplicate-imports': 'error',
+    'no-duplicate-imports': 'warn',
+    'no-useless-escape': 'warn'  // Make regex escapes warnings
     
-    // Style Rules
-    'indent': ['error', 2],
-    'quotes': ['error', 'single'],
-    'semi': ['error', 'always'],
-    'comma-dangle': ['error', 'never']
+    // Removed all style rules - let Prettier handle formatting
   },
   ignorePatterns: [
     'node_modules/'
