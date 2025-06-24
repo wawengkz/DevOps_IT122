@@ -585,10 +585,25 @@ jobs:
           echo "Checking for critical/high vulnerabilities..."
           audit-ci --config ../audit-ci.json || echo "Frontend has moderate+ vulnerabilities"
 
-      # ADD DEPENDENCY SCANNING - Enhanced vulnerability scanning
+      # ENHANCED DEPENDENCY SCANNING - Multi-tool vulnerability scanning
       - name: Enhanced Dependency Vulnerability Scanning
         run: |
           echo "=== Enhanced Dependency Scanning ==="
+          
+          # Create audit-ci configuration inline
+          cat > audit-ci.json << 'EOF'
+          {
+            "low": false,
+            "moderate": false,
+            "high": true,
+            "critical": true,
+            "report-type": "summary",
+            "allowlist": [],
+            "registry": "https://registry.npmjs.org/",
+            "output-format": "text",
+            "pass-enoaudit": true
+          }
+          EOF
           
           # Run Snyk if token is available
           if [ -n "${{ secrets.SNYK_TOKEN }}" ]; then
@@ -599,12 +614,14 @@ jobs:
             echo "Scanning backend with Snyk..."
             cd backend
             snyk test --json > ../backend-snyk-report.json || echo "Snyk scan completed with vulnerabilities"
+            snyk test --severity-threshold=high || echo "Backend has high/critical vulnerabilities"
             cd ..
             
             # Frontend Snyk scan  
             echo "Scanning frontend with Snyk..."
             cd frontend
             snyk test --json > ../frontend-snyk-report.json || echo "Snyk scan completed with vulnerabilities"
+            snyk test --severity-threshold=high || echo "Frontend has high/critical vulnerabilities"
             cd ..
           else
             echo "SNYK_TOKEN not available, skipping Snyk scans"
@@ -615,56 +632,121 @@ jobs:
           echo "Running enhanced audit-ci checks..."
           # Backend audit with detailed output
           cd backend
+          npm audit --audit-level=high || echo "Backend has high+ vulnerabilities"
           audit-ci --config ../audit-ci.json || echo "Backend audit completed with issues"
           cd ..
           
           # Frontend audit with detailed output
           cd frontend  
+          npm audit --audit-level=high || echo "Frontend has high+ vulnerabilities"
           audit-ci --config ../audit-ci.json || echo "Frontend audit completed with issues"
           cd ..
+          
+          # OSV Scanner for additional vulnerability detection
+          echo "Running OSV Scanner..."
+          if command -v osv-scanner &> /dev/null; then
+            osv-scanner --lockfile=backend/package-lock.json --format=json --output=backend-osv-report.json || echo "OSV scan completed for backend"
+            osv-scanner --lockfile=frontend/package-lock.json --format=json --output=frontend-osv-report.json || echo "OSV scan completed for frontend"
+          else
+            echo "OSV Scanner not available, using Docker version..."
+            docker run --rm -v "$PWD:/workspace" gcr.io/google.com/osv-scanner:latest \
+              --lockfile=/workspace/backend/package-lock.json --format=json > backend-osv-report.json 2>/dev/null || echo "OSV backend scan completed"
+            docker run --rm -v "$PWD:/workspace" gcr.io/google.com/osv-scanner:latest \
+              --lockfile=/workspace/frontend/package-lock.json --format=json > frontend-osv-report.json 2>/dev/null || echo "OSV frontend scan completed"
+          fi
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
 
-      # Check for vulnerabilities with detailed reporting
+      # Enhanced vulnerability reporting
       - name: Detailed Vulnerability Assessment
         run: |
           echo "=== Vulnerability Assessment Summary ==="
           
+          # Count vulnerabilities from different sources
+          TOTAL_VULNS=0
+          
           # Process Snyk reports if they exist
           if [ -f "backend-snyk-report.json" ]; then
-            echo "Backend Snyk vulnerabilities:"
+            echo "📊 Backend Snyk vulnerabilities:"
             if command -v jq &> /dev/null; then
-              cat backend-snyk-report.json | jq -r '.vulnerabilities[]? | .title + " (Severity: " + .severity + ")"' || echo "No backend vulnerabilities found"
+              BACKEND_SNYK=$(cat backend-snyk-report.json | jq -r '.vulnerabilities[]? | select(.severity == "high" or .severity == "critical") | .title + " (Severity: " + .severity + ")"' | wc -l)
+              echo "   High/Critical: $BACKEND_SNYK"
+              TOTAL_VULNS=$((TOTAL_VULNS + BACKEND_SNYK))
+              cat backend-snyk-report.json | jq -r '.vulnerabilities[]? | select(.severity == "high" or .severity == "critical") | "   - " + .title + " (" + .severity + ")"' | head -5
             else
-              echo "Backend Snyk report generated (jq not available for detailed parsing)"
+              echo "   Backend Snyk report generated (jq not available for detailed parsing)"
             fi
           fi
           
           if [ -f "frontend-snyk-report.json" ]; then
-            echo "Frontend Snyk vulnerabilities:"  
+            echo "📊 Frontend Snyk vulnerabilities:"  
             if command -v jq &> /dev/null; then
-              cat frontend-snyk-report.json | jq -r '.vulnerabilities[]? | .title + " (Severity: " + .severity + ")"' || echo "No frontend vulnerabilities found"
+              FRONTEND_SNYK=$(cat frontend-snyk-report.json | jq -r '.vulnerabilities[]? | select(.severity == "high" or .severity == "critical") | .title + " (Severity: " + .severity + ")"' | wc -l)
+              echo "   High/Critical: $FRONTEND_SNYK"
+              TOTAL_VULNS=$((TOTAL_VULNS + FRONTEND_SNYK))
+              cat frontend-snyk-report.json | jq -r '.vulnerabilities[]? | select(.severity == "high" or .severity == "critical") | "   - " + .title + " (" + .severity + ")"' | head -5
             else
-              echo "Frontend Snyk report generated (jq not available for detailed parsing)"
+              echo "   Frontend Snyk report generated (jq not available for detailed parsing)"
             fi
           fi
           
-          # Create vulnerability summary
-          echo "Creating vulnerability summary..."
-          cat > vulnerability-summary.md << 'EOF'
-          # Vulnerability Scan Summary
+          # Process OSV reports
+          if [ -f "backend-osv-report.json" ]; then
+            echo "📊 Backend OSV Scanner results:"
+            if command -v jq &> /dev/null; then
+              OSV_BACKEND=$(cat backend-osv-report.json | jq -r '.results[]?.packages[]?.vulnerabilities[]? | .id' 2>/dev/null | wc -l)
+              echo "   Vulnerabilities found: $OSV_BACKEND"
+            else
+              echo "   OSV report generated"
+            fi
+          fi
           
-          ## Scan Results
-          - **Backend Scan**: Completed with Snyk and npm audit
-          - **Frontend Scan**: Completed with Snyk and npm audit  
+          if [ -f "frontend-osv-report.json" ]; then
+            echo "📊 Frontend OSV Scanner results:"
+            if command -v jq &> /dev/null; then
+              OSV_FRONTEND=$(cat frontend-osv-report.json | jq -r '.results[]?.packages[]?.vulnerabilities[]? | .id' 2>/dev/null | wc -l)
+              echo "   Vulnerabilities found: $OSV_FRONTEND"
+            else
+              echo "   OSV report generated"
+            fi
+          fi
+          
+          # Create comprehensive vulnerability summary
+          echo "Creating vulnerability summary..."
+          cat > vulnerability-summary.md << EOF
+          # 🔒 Comprehensive Vulnerability Scan Summary
+          
+          ## Scan Results Overview
+          - **Backend Scan**: Completed with Snyk, npm audit, and OSV Scanner
+          - **Frontend Scan**: Completed with Snyk, npm audit, and OSV Scanner  
           - **Severity Threshold**: High and Critical vulnerabilities flagged
+          - **Total High/Critical Found**: $TOTAL_VULNS (from Snyk)
+          
+          ## Scanning Tools Used
+          - **Snyk**: Commercial vulnerability database
+          - **npm audit**: NPM's built-in vulnerability checker
+          - **audit-ci**: Configurable audit tool with thresholds
+          - **OSV Scanner**: Google's Open Source Vulnerabilities database
           
           ## Next Steps
-          - Review detailed reports in artifacts
-          - Address high/critical severity issues
-          - Update dependencies as needed
+          1. Review detailed reports in artifacts
+          2. Address high/critical severity issues immediately
+          3. Update dependencies as needed
+          4. Consider adding vulnerability monitoring
+          
+          ## Report Files Generated
+          - \`backend-snyk-report.json\`: Snyk backend results
+          - \`frontend-snyk-report.json\`: Snyk frontend results
+          - \`backend-osv-report.json\`: OSV backend results
+          - \`frontend-osv-report.json\`: OSV frontend results
+          - \`audit-ci.json\`: Audit configuration used
           EOF
+          
+          echo ""
+          echo "🎯 Vulnerability Scanning Complete!"
+          echo "📊 Total High/Critical vulnerabilities: $TOTAL_VULNS"
+          echo "📁 Check artifacts for detailed reports"
           
       - name: E2E Dependencies Security Audit
         run: |
@@ -769,7 +851,7 @@ jobs:
           cd frontend && license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Unlicense" --excludePrivatePackages || echo "Some licenses may need review"
           cd ..
 
-      # Upload enhanced security reports
+      # Upload enhanced security reports with new OSV reports
       - name: Upload Enhanced Security Reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -781,6 +863,8 @@ jobs:
             e2e/e2e-audit-report.html
             backend-snyk-report.json
             frontend-snyk-report.json
+            backend-osv-report.json
+            frontend-osv-report.json
             vulnerability-summary.md
             *-trivy-results.sarif
             audit-ci.json
@@ -1232,8 +1316,10 @@ jobs:
             "enhancements": {
               "eslint_reporting": true,
               "snyk_scanning": true,
+              "osv_scanning": true,
               "enhanced_security": true,
-              "dependency_scanning": true
+              "dependency_scanning": true,
+              "multi_tool_scanning": true
             }
           }
           EOF
@@ -1271,14 +1357,15 @@ jobs:
           echo "- coverage-reports: Code coverage analysis"
           echo "- e2e-test-results: End-to-end test reports"
           echo "- eslint-reports: Code quality and linting results"
-          echo "- enhanced-security-reports: Comprehensive security scans"
+          echo "- enhanced-security-reports: Multi-tool security scans"
           echo "- brainbytes-enhanced-artifacts: Complete enhanced package"
           echo ""
           echo "🔍 Enhanced Features:"
           echo "- ESLint JSON reporting with detailed analysis"
-          echo "- Snyk vulnerability scanning (if token provided)"
+          echo "- Multi-tool vulnerability scanning (Snyk + OSV + npm audit)"
           echo "- Enhanced dependency auditing with audit-ci"
           echo "- Comprehensive security artifact collection"
+          echo "- Vulnerability counting and severity assessment"
           echo ""
           echo "📊 Artifact sizes:"
           du -sh ./artifacts/* 2>/dev/null || echo "Artifact size calculation completed"
@@ -1309,7 +1396,7 @@ jobs:
           echo "| 🏗️ Build | ${{ needs.build.result }} | Docker image building |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔍 Enhanced Lint | ${{ needs.lint.result }} | Code quality with ESLint configs |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔄 Matrix Build | ${{ needs.matrix-build.result }} | Multi-version compatibility |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔒 Enhanced Security | ${{ needs.security-scan.result }} | Vulnerability + dependency scanning |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔒 Multi-Tool Security | ${{ needs.security-scan.result }} | Vulnerability + dependency scanning |" >> $GITHUB_STEP_SUMMARY
           echo "| 🎭 E2E Testing | ${{ needs.e2e-testing.result }} | End-to-end tests (simplified) |" >> $GITHUB_STEP_SUMMARY
           echo "| 📊 Coverage | ${{ needs.coverage.result }} | Code coverage analysis |" >> $GITHUB_STEP_SUMMARY
           echo "| 📦 Enhanced Artifacts | ${{ needs.artifacts.result }} | Complete artifact packaging |" >> $GITHUB_STEP_SUMMARY
@@ -1325,12 +1412,13 @@ jobs:
           
           echo "## 🎯 Enhanced Pipeline Features" >> $GITHUB_STEP_SUMMARY
           echo "- **Enhanced ESLint:** JSON reporting, custom configs, detailed analysis" >> $GITHUB_STEP_SUMMARY
-          echo "- **Dependency Scanning:** audit-ci, Snyk integration, vulnerability assessment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Multi-Tool Dependency Scanning:** Snyk + OSV Scanner + npm audit + audit-ci" >> $GITHUB_STEP_SUMMARY
+          echo "- **Vulnerability Assessment:** Counting, severity filtering, comprehensive reporting" >> $GITHUB_STEP_SUMMARY
           echo "- **Core Testing:** Unit tests, integration tests, enhanced linting" >> $GITHUB_STEP_SUMMARY
           echo "- **End-to-End Testing:** Simplified API and service testing" >> $GITHUB_STEP_SUMMARY
           echo "- **Code Coverage:** Comprehensive coverage reporting" >> $GITHUB_STEP_SUMMARY
           echo "- **Matrix Testing:** Multi-version Node.js compatibility" >> $GITHUB_STEP_SUMMARY
-          echo "- **Security Scanning:** Multi-tool vulnerability and dependency auditing" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Scanning:** Enterprise-level multi-tool vulnerability auditing" >> $GITHUB_STEP_SUMMARY
           echo "- **Artifact Management:** Enhanced build outputs and reports" >> $GITHUB_STEP_SUMMARY
           echo "- **Performance Optimization:** Intelligent caching" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -1366,19 +1454,19 @@ jobs:
           fi
           
           if [[ "${{ needs.security-scan.result }}" == "success" ]]; then
-            echo "✅ **Enhanced Security:** Security scans completed successfully" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Multi-Tool Security:** Security scans completed successfully" >> $GITHUB_STEP_SUMMARY
           else
-            echo "🔒 **Enhanced Security:** Review security scan results" >> $GITHUB_STEP_SUMMARY
+            echo "🔒 **Multi-Tool Security:** Review security scan results" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📁 Available Enhanced Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- **Enhanced Security Reports:** Multi-tool vulnerability scans and audits" >> $GITHUB_STEP_SUMMARY
+          echo "- **Multi-Tool Security Reports:** Snyk + OSV + npm audit + Trivy scans" >> $GITHUB_STEP_SUMMARY
           echo "- **ESLint Reports:** JSON-formatted code quality analysis" >> $GITHUB_STEP_SUMMARY
           echo "- **Coverage Reports:** Code coverage analysis" >> $GITHUB_STEP_SUMMARY
           echo "- **E2E Test Results:** Simplified API and service tests" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Outputs:** Docker images and distributions" >> $GITHUB_STEP_SUMMARY
-          echo "- **Complete Enhanced Package:** All artifacts with enhancements" >> $GITHUB_STEP_SUMMARY
+          echo "- **Complete Enhanced Package:** All artifacts with multi-tool enhancements" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           echo "## 🚀 Deployment Readiness" >> $GITHUB_STEP_SUMMARY
@@ -1386,26 +1474,27 @@ jobs:
             echo "🎉 **READY FOR DEPLOYMENT:** All critical tests passed!" >> $GITHUB_STEP_SUMMARY
             echo "- Core functionality verified" >> $GITHUB_STEP_SUMMARY
             echo "- End-to-end workflows tested" >> $GITHUB_STEP_SUMMARY
-            echo "- Enhanced security scans completed" >> $GITHUB_STEP_SUMMARY
+            echo "- Multi-tool security scans completed" >> $GITHUB_STEP_SUMMARY
             echo "- Code quality verified with ESLint" >> $GITHUB_STEP_SUMMARY
+            echo "- Vulnerability assessment performed" >> $GITHUB_STEP_SUMMARY
             echo "- Artifacts available for deployment" >> $GITHUB_STEP_SUMMARY
           else
             echo "⏳ **DEPLOYMENT BLOCKED:** Address failing jobs before deployment" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*Enhanced pipeline completed on $(date)*" >> $GITHUB_STEP_SUMMARY
+          echo "*Enhanced multi-tool pipeline completed on $(date)*" >> $GITHUB_STEP_SUMMARY
           
       - name: Enhanced Pipeline Status
         run: |
-          echo "🏁 BrainBytes Enhanced CI/CD Pipeline Complete!"
+          echo "🏁 BrainBytes Enhanced Multi-Tool CI/CD Pipeline Complete!"
           echo ""
           echo "📊 Comprehensive Results Summary:"
           echo "- 🧪 Test: ${{ needs.test.result }}"
           echo "- 🏗️ Build: ${{ needs.build.result }}"
           echo "- 🔍 Enhanced Lint: ${{ needs.lint.result }}"
           echo "- 🔄 Matrix: ${{ needs.matrix-build.result }}"
-          echo "- 🔒 Enhanced Security: ${{ needs.security-scan.result }}"
+          echo "- 🔒 Multi-Tool Security: ${{ needs.security-scan.result }}"
           echo "- 🎭 E2E: ${{ needs.e2e-testing.result }}"
           echo "- 📊 Coverage: ${{ needs.coverage.result }}"
           echo "- 📦 Enhanced Artifacts: ${{ needs.artifacts.result }}"
@@ -1418,11 +1507,19 @@ jobs:
           echo ""
           echo "🎯 Enhanced Quality Assurance:"
           echo "- ESLint with JSON reporting and custom configs"
-          echo "- Multi-tool dependency vulnerability scanning"
+          echo "- Multi-tool dependency vulnerability scanning (4 tools)"
+          echo "- Vulnerability counting and severity assessment"
           echo "- Multi-version Node.js compatibility testing"
-          echo "- Comprehensive security scanning with Snyk integration"
+          echo "- Comprehensive security scanning with enterprise-level tools"
           echo "- Simplified E2E API validation"
           echo "- Code coverage analysis"
+          echo ""
+          echo "🔒 Security Tools Used:"
+          echo "- Snyk (commercial vulnerability database)"
+          echo "- OSV Scanner (Google's Open Source Vulnerabilities)"
+          echo "- npm audit (NPM's built-in checker)"
+          echo "- audit-ci (configurable thresholds)"
+          echo "- Trivy (container security scanning)"
           echo ""
           
           # Determine overall pipeline status
@@ -1432,7 +1529,7 @@ jobs:
           fi
           
           if [ "$CORE_JOBS_SUCCESS" = true ] && [[ "${{ needs.e2e-testing.result }}" == "success" ]]; then
-            echo "🎉 ENHANCED PIPELINE SUCCESS: Ready for deployment!"
+            echo "🎉 ENHANCED MULTI-TOOL PIPELINE SUCCESS: Ready for deployment!"
             exit 0
           elif [ "$CORE_JOBS_SUCCESS" = true ]; then
             echo "⚠️ ENHANCED PIPELINE PARTIAL SUCCESS: Core jobs passed, review optional jobs"
