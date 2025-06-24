@@ -1,0 +1,301 @@
+# .github/workflows/security.yml
+name: BrainBytes Security Scan
+
+on:
+  push:
+    branches: [ main, development ]
+  schedule:
+    # Run weekly on Sundays at midnight UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies for security scanning
+        run: |
+          # Install npm audit globally for better reporting
+          npm install -g npm-audit-html audit-ci
+          
+      - name: Backend Security Audit
+        working-directory: ./backend
+        run: |
+          echo "=== Backend Security Audit ==="
+          npm ci
+          
+          # Run npm audit and generate reports
+          echo "Running npm audit..."
+          npm audit --audit-level=moderate || echo "Vulnerabilities found in backend"
+          
+          # Generate HTML report
+          npm audit --json | npm-audit-html --output backend-audit-report.html || true
+          
+          # Check for critical and high vulnerabilities
+          echo "Checking for critical/high vulnerabilities..."
+          audit-ci --moderate || echo "Backend has moderate+ vulnerabilities"
+          
+      - name: Frontend Security Audit  
+        working-directory: ./frontend
+        run: |
+          echo "=== Frontend Security Audit ==="
+          npm ci
+          
+          # Run npm audit and generate reports
+          echo "Running npm audit..."
+          npm audit --audit-level=moderate || echo "Vulnerabilities found in frontend"
+          
+          # Generate HTML report
+          npm audit --json | npm-audit-html --output frontend-audit-report.html || true
+          
+          # Check for critical and high vulnerabilities
+          echo "Checking for critical/high vulnerabilities..."
+          audit-ci --moderate || echo "Frontend has moderate+ vulnerabilities"
+          
+      - name: E2E Dependencies Security Audit
+        working-directory: ./e2e
+        if: hashFiles('./e2e/package.json') != ''
+        run: |
+          echo "=== E2E Security Audit ==="
+          npm ci
+          
+          # Run npm audit for E2E dependencies
+          echo "Running npm audit for E2E..."
+          npm audit --audit-level=moderate || echo "Vulnerabilities found in E2E dependencies"
+          
+          # Generate HTML report
+          npm audit --json | npm-audit-html --output e2e-audit-report.html || true
+          
+      - name: Build Docker Images for Security Scanning
+        run: |
+          echo "=== Building Docker Images for Security Scan ==="
+          
+          # Build backend image
+          echo "Building backend image..."
+          docker build -t brainbytes/backend:security-scan ./backend
+          
+          # Build frontend image  
+          echo "Building frontend image..."
+          docker build -t brainbytes/frontend:security-scan ./frontend
+          
+      - name: Scan Docker Images with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'brainbytes/backend:security-scan'
+          format: 'sarif'
+          output: 'backend-trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0' # Don't fail workflow if vulnerabilities are found
+          ignore-unfixed: true
+          
+      - name: Scan Frontend Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'brainbytes/frontend:security-scan'
+          format: 'sarif'
+          output: 'frontend-trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0' # Don't fail workflow if vulnerabilities are found
+          ignore-unfixed: true
+          
+      - name: Scan Repository for Vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'repository-trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0' # Don't fail workflow if vulnerabilities are found
+          
+      - name: Check for Secrets and API Keys
+        run: |
+          echo "=== Scanning for Secrets ==="
+          
+          # Install truffleHog for secret scanning
+          docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest filesystem /pwd --json > secrets-scan.json || true
+          
+          # Check for common patterns that might be secrets
+          echo "Checking for potential secrets in code..."
+          
+          # Look for API keys, tokens, passwords in non-config files
+          grep -r -n -i "api[_-]key\|secret\|password\|token" --include="*.js" --include="*.jsx" --include="*.ts" --include="*.tsx" --exclude-dir=node_modules . || echo "No obvious secrets found in code"
+          
+          # Check for hardcoded MongoDB URIs (should use env vars)
+          grep -r -n "mongodb://" --include="*.js" --include="*.ts" --exclude-dir=node_modules . || echo "No hardcoded MongoDB URIs found"
+          
+          # Check for hardcoded ports or hosts
+          grep -r -n -E "localhost:[0-9]+|127\.0\.0\.1:[0-9]+" --include="*.js" --include="*.ts" --exclude-dir=node_modules . || echo "No hardcoded localhost references found"
+          
+      - name: Security Configuration Check
+        run: |
+          echo "=== Security Configuration Check ==="
+          
+          # Check if HTTPS is properly configured
+          echo "Checking security configurations..."
+          
+          # Check backend for security headers
+          if grep -r "helmet\|cors" backend/ --include="*.js"; then
+            echo "✅ Security middleware found in backend"
+          else
+            echo "⚠️  Consider adding security middleware (helmet, cors) to backend"
+          fi
+          
+          # Check for environment variable usage
+          if grep -r "process\.env" backend/ frontend/ --include="*.js" --include="*.jsx" --include="*.ts" --include="*.tsx"; then
+            echo "✅ Environment variables being used"
+          else
+            echo "⚠️  Ensure sensitive data uses environment variables"
+          fi
+          
+          # Check Docker security
+          echo "Checking Dockerfile security..."
+          
+          # Check if running as non-root user
+          if grep -r "USER" backend/Dockerfile frontend/Dockerfile; then
+            echo "✅ Non-root user configured in Dockerfiles"
+          else
+            echo "⚠️  Consider running containers as non-root user"
+          fi
+          
+      - name: Dependency License Check
+        run: |
+          echo "=== License Compatibility Check ==="
+          
+          # Install license checker
+          npm install -g license-checker
+          
+          # Check backend licenses
+          echo "Backend license report:"
+          cd backend && license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Unlicense" --excludePrivatePackages || echo "Some licenses may need review"
+          cd ..
+          
+          # Check frontend licenses  
+          echo "Frontend license report:"
+          cd frontend && license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Unlicense" --excludePrivatePackages || echo "Some licenses may need review"
+          cd ..
+          
+      - name: Generate Security Summary
+        run: |
+          echo "=== Security Scan Summary ===" > security-summary.md
+          echo "" >> security-summary.md
+          echo "## BrainBytes Security Scan Results" >> security-summary.md
+          echo "" >> security-summary.md
+          echo "**Scan Date:** $(date)" >> security-summary.md
+          echo "**Branch:** ${{ github.ref_name }}" >> security-summary.md
+          echo "**Commit:** ${{ github.sha }}" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          echo "### Dependency Vulnerabilities" >> security-summary.md
+          echo "- Backend npm audit completed" >> security-summary.md
+          echo "- Frontend npm audit completed" >> security-summary.md
+          echo "- E2E dependencies audit completed" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          echo "### Docker Image Security" >> security-summary.md
+          echo "- Backend image scanned with Trivy" >> security-summary.md  
+          echo "- Frontend image scanned with Trivy" >> security-summary.md
+          echo "- Repository filesystem scanned" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          echo "### Configuration Security" >> security-summary.md
+          echo "- Security middleware check completed" >> security-summary.md
+          echo "- Environment variable usage verified" >> security-summary.md
+          echo "- Docker security configuration reviewed" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          echo "### Recommendations" >> security-summary.md
+          echo "- Review any HIGH or CRITICAL vulnerabilities found" >> security-summary.md
+          echo "- Update dependencies regularly" >> security-summary.md
+          echo "- Ensure all secrets use environment variables" >> security-summary.md
+          echo "- Keep Docker base images updated" >> security-summary.md
+          echo "- Review and rotate API keys periodically" >> security-summary.md
+          
+          cat security-summary.md
+          
+      - name: Upload Security Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            backend/backend-audit-report.html
+            frontend/frontend-audit-report.html
+            e2e/e2e-audit-report.html
+            *-trivy-results.sarif
+            secrets-scan.json
+            security-summary.md
+          retention-days: 30
+          
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: backend-trivy-results.sarif
+          category: backend-security
+          
+      - name: Upload Frontend SARIF to GitHub Security  
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: frontend-trivy-results.sarif
+          category: frontend-security
+          
+      - name: Upload Repository SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: repository-trivy-results.sarif
+          category: repository-security
+          
+      - name: Security Scan Status
+        run: |
+          echo "🔒 Security scan completed!"
+          echo ""
+          echo "📊 Reports generated:"
+          echo "- Dependency vulnerability reports (HTML)"
+          echo "- Docker image security scans (SARIF)"
+          echo "- Secret scanning results (JSON)"
+          echo "- Security configuration analysis"
+          echo ""
+          echo "📋 View detailed results in:"
+          echo "- GitHub Security tab for SARIF results"
+          echo "- Actions artifacts for detailed reports"
+          echo "- Security summary above"
+          echo ""
+          echo "⚠️  If critical vulnerabilities are found:"
+          echo "1. Review the reports in artifacts"
+          echo "2. Update vulnerable dependencies"
+          echo "3. Apply security patches"
+          echo "4. Re-run this workflow to verify fixes"
+          
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            try {
+              const summary = fs.readFileSync('security-summary.md', 'utf8');
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🔒 Security Scan Results\n\n${summary}\n\n*This comment was automatically generated by the security workflow.*`
+              });
+            } catch (error) {
+              console.log('Could not create PR comment:', error);
+            }
