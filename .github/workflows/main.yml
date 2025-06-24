@@ -942,25 +942,31 @@ jobs:
             }
           fi
           
-      # Show service logs on failure
+      # Show service logs on failure (Fixed)
       - name: Show service logs on failure
         if: failure()
         run: |
           echo "=== E2E Service Logs ==="
-          docker-compose -f docker-compose.e2e.yml logs backend-e2e --tail=50
+          echo "Backend logs:"
+          docker logs brainbytes-backend-e2e --tail=50 2>/dev/null || echo "Backend logs not available"
           echo ""
-          echo "=== Frontend E2E Logs ==="
-          docker-compose -f docker-compose.e2e.yml logs frontend-e2e --tail=50
+          echo "Frontend logs:"
+          docker logs brainbytes-frontend-e2e --tail=50 2>/dev/null || echo "Frontend logs not available"
           echo ""
-          echo "=== MongoDB E2E Logs ==="
-          docker-compose -f docker-compose.e2e.yml logs mongo-e2e --tail=30
+          echo "MongoDB logs:"
+          docker logs brainbytes-mongo-e2e --tail=30 2>/dev/null || echo "MongoDB logs not available"
+          echo ""
+          echo "=== Docker Status ==="
+          docker ps -a
         
-      # Stop E2E services
+      # Stop E2E services (Fixed)
       - name: Stop E2E services
         if: always()
         run: |
           echo "Stopping E2E services..."
-          docker-compose -f docker-compose.e2e.yml down -v --remove-orphans || true
+          docker stop brainbytes-backend-e2e brainbytes-frontend-e2e brainbytes-mongo-e2e 2>/dev/null || true
+          docker rm brainbytes-backend-e2e brainbytes-frontend-e2e brainbytes-mongo-e2e 2>/dev/null || true
+          docker-compose -f docker-compose.e2e.yml down -v --remove-orphans 2>/dev/null || true
           echo "E2E cleanup completed"
 
   # Job 7: Code Coverage Reporting
