@@ -1191,7 +1191,7 @@ jobs:
           echo "| 🔍 Lint | ${{ needs.lint.result }} | Code quality checks |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔄 Matrix Build | ${{ needs.matrix-build.result }} | Multi-version compatibility |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔒 Security | ${{ needs.security-scan.result }} | Vulnerability scanning |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🎭 E2E Testing | ${{ needs.e2e-testing.result }} | End-to-end tests |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎭 E2E Testing | ${{ needs.e2e-testing.result }} | End-to-end tests (simplified) |" >> $GITHUB_STEP_SUMMARY
           echo "| 📊 Coverage | ${{ needs.coverage.result }} | Code coverage analysis |" >> $GITHUB_STEP_SUMMARY
           echo "| 📦 Artifacts | ${{ needs.artifacts.result }} | Build artifact packaging |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -1207,7 +1207,7 @@ jobs:
           
           echo "## 🎯 Enhanced Pipeline Features" >> $GITHUB_STEP_SUMMARY
           echo "- **Core Testing:** Unit tests, integration tests, linting" >> $GITHUB_STEP_SUMMARY
-          echo "- **End-to-End Testing:** Full application workflow testing" >> $GITHUB_STEP_SUMMARY
+          echo "- **End-to-End Testing:** Simplified API and service testing" >> $GITHUB_STEP_SUMMARY
           echo "- **Code Coverage:** Comprehensive coverage reporting" >> $GITHUB_STEP_SUMMARY
           echo "- **Matrix Testing:** Multi-version Node.js compatibility" >> $GITHUB_STEP_SUMMARY
           echo "- **Security Scanning:** Vulnerability and dependency auditing" >> $GITHUB_STEP_SUMMARY
@@ -1234,9 +1234,9 @@ jobs:
           fi
           
           if [[ "${{ needs.e2e-testing.result }}" == "success" ]]; then
-            echo "✅ **E2E Testing:** End-to-end tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **E2E Testing:** Simplified API tests passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ **E2E Testing:** Review end-to-end test results" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **E2E Testing:** Review service connectivity and API tests" >> $GITHUB_STEP_SUMMARY
           fi
           
           if [[ "${{ needs.coverage.result }}" == "success" ]]; then
@@ -1255,7 +1255,7 @@ jobs:
           echo "## 📁 Available Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- **Security Reports:** Vulnerability scans and audits" >> $GITHUB_STEP_SUMMARY
           echo "- **Coverage Reports:** Code coverage analysis" >> $GITHUB_STEP_SUMMARY
-          echo "- **E2E Test Results:** End-to-end test reports" >> $GITHUB_STEP_SUMMARY
+          echo "- **E2E Test Results:** Simplified API and service tests" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Outputs:** Docker images and distributions" >> $GITHUB_STEP_SUMMARY
           echo "- **Complete Package:** All artifacts combined" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -1297,7 +1297,7 @@ jobs:
           echo "🎯 Quality Assurance:"
           echo "- Multi-version Node.js compatibility testing"
           echo "- Comprehensive security scanning"
-          echo "- End-to-end workflow validation"
+          echo "- Simplified E2E API validation"
           echo "- Code coverage analysis"
           echo ""
           
