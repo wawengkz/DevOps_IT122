@@ -34,6 +34,28 @@ jobs:
         with:
           node-version: '18'
           
+      # CACHING: Node.js dependencies for all projects
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+            
+      # CACHING: Backend specific cache
+      - name: Cache Backend dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/node_modules
+            backend/.npm
+          key: ${{ runner.os }}-backend-${{ hashFiles('backend/package-lock.json', 'backend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-backend-
+          
       # Test Backend
       - name: Test Backend
         run: |
@@ -54,6 +76,19 @@ jobs:
           MONGODB_URI: mongodb://localhost:27017/brainbytes_test
           NODE_ENV: test
           
+      # CACHING: Frontend specific (Next.js)
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/.next/cache
+            frontend/node_modules
+            frontend/.npm
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}-${{ hashFiles('frontend/**/*.js', 'frontend/**/*.jsx', 'frontend/**/*.ts', 'frontend/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}-
+            ${{ runner.os }}-nextjs-
+          
       # Test Frontend  
       - name: Test Frontend
         run: |
@@ -63,6 +98,17 @@ jobs:
           npm install
           npm run build
           npm test
+          
+      # CACHING: E2E dependencies
+      - name: Cache E2E dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            e2e/node_modules
+            e2e/.npm
+          key: ${{ runner.os }}-e2e-${{ hashFiles('e2e/package-lock.json', 'e2e/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-e2e-
           
       # Test E2E (Basic)
       - name: Test E2E Dependencies
@@ -87,6 +133,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
+      # CACHING: Docker layers
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+        
       - name: Debug - Check file structure
         run: |
           echo "=== Repository Structure ==="
@@ -103,8 +158,8 @@ jobs:
           echo "Building frontend image..."
           docker buildx build \
             --tag brainbytes/frontend:latest \
-            --cache-from type=gha,scope=frontend \
-            --cache-to type=gha,mode=max,scope=frontend \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
             --load \
             ./frontend
             
@@ -113,10 +168,16 @@ jobs:
           echo "Building backend image..."
           docker buildx build \
             --tag brainbytes/backend:latest \
-            --cache-from type=gha,scope=backend \
-            --cache-to type=gha,mode=max,scope=backend \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
             --load \
             ./backend
+            
+      # Move cache to preserve it for next run
+      - name: Move Docker cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache || echo "No new cache to move"
           
       - name: Test Built Images
         run: |
@@ -175,6 +236,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          
+      # CACHING: Node.js dependencies for linting
+      - name: Cache Node.js dependencies for linting
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-lint-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-lint-
+            ${{ runner.os }}-node-
           
       # Frontend Linting
       - name: Lint Frontend
@@ -235,10 +308,42 @@ jobs:
         with:
           node-version: '18'
           
+      # CACHING: Security tools
+      - name: Cache Security Tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            /usr/local/lib/node_modules
+          key: ${{ runner.os }}-security-tools-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-security-tools-
+            
+      # CACHING: Trivy database
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: ${{ runner.os }}-trivy-db-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-trivy-db-
+          
       - name: Install Security Tools
         run: |
           # Install npm audit tools globally
           npm install -g npm-audit-html audit-ci license-checker
+          
+      # CACHING: Node.js dependencies for security
+      - name: Cache Node.js dependencies for security
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-security-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-security-
+            ${{ runner.os }}-node-
           
       - name: Backend Security Audit
         working-directory: ./backend
@@ -437,6 +542,14 @@ jobs:
           echo "| 🔒 Security | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
+          echo "## ⚡ Caching Performance" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node.js Dependencies:** Cached across all jobs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker Layers:** Cached for faster image builds" >> $GITHUB_STEP_SUMMARY
+          echo "- **Next.js Build:** Cached for frontend optimization" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Tools:** Cached for faster scans" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trivy Database:** Cached for security scanning" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
           echo "## 🎯 Pipeline Components" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend:** Next.js application with React" >> $GITHUB_STEP_SUMMARY
           echo "- **Backend:** Node.js API with Express and MongoDB" >> $GITHUB_STEP_SUMMARY
@@ -468,6 +581,11 @@ jobs:
           echo "- Build: ${{ needs.build.result }}"
           echo "- Lint: ${{ needs.lint.result }}"
           echo "- Security: ${{ needs.security-scan.result }}"
+          echo ""
+          echo "⚡ Caching Summary:"
+          echo "- Node.js dependencies cached for faster installs"
+          echo "- Docker layers cached for faster builds"
+          echo "- Security tools cached for faster scans"
           echo ""
           
           # Determine overall pipeline status
