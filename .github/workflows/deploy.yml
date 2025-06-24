@@ -224,7 +224,7 @@ jobs:
           EOF
           
           # Clean up any existing containers
-          docker-compose -f deployment/docker-compose.test.yml down --remove-orphans 2>/dev/null || true
+          docker compose -f deployment/docker-compose.test.yml down --remove-orphans 2>/dev/null || true
           docker system prune -f 2>/dev/null || true
 
       - name: Deploy to test environment
@@ -234,12 +234,12 @@ jobs:
           cd deployment
           
           # Start services
-          docker-compose -f docker-compose.test.yml --env-file .env.test up -d
+          docker compose -f docker-compose.test.yml --env-file .env.test up -d
           
           # Wait for services to be healthy
           echo "Waiting for services to start..."
           timeout 300 bash -c '
-          while ! docker-compose -f docker-compose.test.yml ps | grep -q "healthy\|Up"; do
+          while ! docker compose -f docker-compose.test.yml ps | grep -q "healthy\|Up"; do
             echo "Waiting for containers to be ready..."
             sleep 10
           done'
@@ -253,7 +253,7 @@ jobs:
             echo "✅ Backend is healthy"
           else
             echo "❌ Backend health check failed"
-            docker-compose -f docker-compose.test.yml logs backend
+            docker compose -f docker-compose.test.yml logs backend
             exit 1
           fi
           
@@ -262,7 +262,7 @@ jobs:
             echo "✅ Frontend is accessible"
           else
             echo "⚠️ Frontend accessibility check failed (may still be starting)"
-            docker-compose -f docker-compose.test.yml logs frontend
+            docker compose -f docker-compose.test.yml logs frontend
           fi
           
           echo "url=http://localhost:8080" >> $GITHUB_OUTPUT
@@ -301,7 +301,7 @@ jobs:
           cd deployment
           echo "#### Container Status" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          docker-compose -f docker-compose.test.yml ps >> $GITHUB_STEP_SUMMARY
+          docker compose -f docker-compose.test.yml ps >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
@@ -320,8 +320,8 @@ jobs:
         run: |
           echo "=== Cleaning up failed deployment ==="
           cd deployment
-          docker-compose -f docker-compose.test.yml logs
-          docker-compose -f docker-compose.test.yml down --remove-orphans
+          docker compose -f docker-compose.test.yml logs
+          docker compose -f docker-compose.test.yml down --remove-orphans
 
   # Job 3: Deploy to Staging (for main branch)
   deploy-staging:
@@ -423,7 +423,7 @@ jobs:
           EOF
           
           # Deploy to staging
-          docker-compose -f docker-compose.staging.yml --env-file .env.staging up -d
+          docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
           
           # Wait for services
           timeout 300 bash -c '
@@ -635,23 +635,23 @@ jobs:
           fi
           
           # Backup current deployment if exists
-          if docker-compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+          if docker compose -f docker-compose.prod.yml ps | grep -q "Up"; then
               echo "📦 Creating backup of current deployment..."
-              docker-compose -f docker-compose.prod.yml exec mongodb mongodump --out /backup/$(date +%Y%m%d_%H%M%S) || true
+              docker compose -f docker-compose.prod.yml exec mongodb mongodump --out /backup/$(date +%Y%m%d_%H%M%S) || true
           fi
           
           # Pull latest images
           echo "⬇️ Pulling latest images..."
-          docker-compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml pull
           
           # Deploy with zero-downtime strategy
           echo "🔄 Deploying with rolling update..."
-          docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
           
           # Wait for services to be healthy
           echo "⏳ Waiting for services to be healthy..."
           timeout 300 bash -c '
-          until docker-compose -f docker-compose.prod.yml ps | grep -q "healthy"; do
+          until docker compose -f docker-compose.prod.yml ps | grep -q "healthy"; do
               echo "Waiting for health checks..."
               sleep 10
           done'
