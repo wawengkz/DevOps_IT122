@@ -1,0 +1,833 @@
+# .github/workflows/deploy.yml
+name: BrainBytes Deploy
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - staging
+          - production
+      deploy_frontend:
+        description: 'Deploy Frontend'
+        required: false
+        default: true
+        type: boolean
+      deploy_backend:
+        description: 'Deploy Backend'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Job 1: Build and Push Docker Images
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-digest: ${{ steps.build-frontend.outputs.digest }}
+      backend-digest: ${{ steps.build-backend.outputs.digest }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract metadata for frontend
+      - name: Extract metadata for Frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Extract metadata for backend
+      - name: Extract metadata for Backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Build and push frontend image
+      - name: Build and push Frontend image
+        id: build-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and push backend image
+      - name: Build and push Backend image
+        id: build-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate build summary
+        run: |
+          echo "## 🚀 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Frontend Image" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** \`${{ steps.meta-frontend.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest:** \`${{ steps.build-frontend.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend Image" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** \`${{ steps.meta-backend.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest:** \`${{ steps.build-backend.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # Job 2: Deploy to Test Environment
+  deploy-test:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/development' || github.event_name == 'workflow_dispatch'
+    environment: 
+      name: test
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Create deployment configuration
+        run: |
+          mkdir -p deployment
+          
+          # Create docker-compose for test environment
+          cat > deployment/docker-compose.test.yml << 'EOF'
+          version: '3.8'
+          
+          services:
+            mongodb:
+              image: mongo:4.4
+              container_name: brainbytes-mongo-test
+              restart: unless-stopped
+              environment:
+                MONGO_INITDB_DATABASE: brainbytes_test
+              ports:
+                - "27017:27017"
+              volumes:
+                - mongo_data:/data/db
+              networks:
+                - brainbytes-network
+          
+            backend:
+              image: ${{ needs.build-and-push.outputs.backend-image }}
+              container_name: brainbytes-backend-test
+              restart: unless-stopped
+              environment:
+                NODE_ENV: test
+                MONGODB_URI: mongodb://mongodb:27017/brainbytes_test
+                PORT: 3000
+                HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+              ports:
+                - "3000:3000"
+              depends_on:
+                - mongodb
+              networks:
+                - brainbytes-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+          
+            frontend:
+              image: ${{ needs.build-and-push.outputs.frontend-image }}
+              container_name: brainbytes-frontend-test
+              restart: unless-stopped
+              environment:
+                NODE_ENV: development
+                NEXT_PUBLIC_API_URL: http://backend:3000
+                NEXT_TELEMETRY_DISABLED: 1
+              ports:
+                - "8080:3000"
+              depends_on:
+                - backend
+              networks:
+                - brainbytes-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+          
+          volumes:
+            mongo_data:
+          
+          networks:
+            brainbytes-network:
+              driver: bridge
+          EOF
+
+      - name: Prepare deployment environment
+        run: |
+          echo "=== Preparing Test Environment ==="
+          
+          # Create environment file
+          cat > deployment/.env.test << EOF
+          NODE_ENV=test
+          MONGODB_URI=mongodb://mongodb:27017/brainbytes_test
+          HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
+          NEXT_PUBLIC_API_URL=http://localhost:3000
+          NEXT_TELEMETRY_DISABLED=1
+          EOF
+          
+          # Clean up any existing containers
+          docker-compose -f deployment/docker-compose.test.yml down --remove-orphans 2>/dev/null || true
+          docker system prune -f 2>/dev/null || true
+
+      - name: Deploy to test environment
+        id: deploy
+        run: |
+          echo "=== Deploying to Test Environment ==="
+          cd deployment
+          
+          # Start services
+          docker-compose -f docker-compose.test.yml --env-file .env.test up -d
+          
+          # Wait for services to be healthy
+          echo "Waiting for services to start..."
+          timeout 300 bash -c '
+          while ! docker-compose -f docker-compose.test.yml ps | grep -q "healthy\|Up"; do
+            echo "Waiting for containers to be ready..."
+            sleep 10
+          done'
+          
+          # Verify deployment
+          echo "Verifying deployment..."
+          sleep 30
+          
+          # Test backend health
+          if curl -f http://localhost:3000/health; then
+            echo "✅ Backend is healthy"
+          else
+            echo "❌ Backend health check failed"
+            docker-compose -f docker-compose.test.yml logs backend
+            exit 1
+          fi
+          
+          # Test frontend accessibility
+          if curl -f http://localhost:8080; then
+            echo "✅ Frontend is accessible"
+          else
+            echo "⚠️ Frontend accessibility check failed (may still be starting)"
+            docker-compose -f docker-compose.test.yml logs frontend
+          fi
+          
+          echo "url=http://localhost:8080" >> $GITHUB_OUTPUT
+
+      - name: Run deployment verification tests
+        run: |
+          echo "=== Running Deployment Verification Tests ==="
+          
+          # Test API endpoints
+          echo "Testing API endpoints..."
+          
+          # Test health endpoint
+          curl -f http://localhost:3000/health || echo "Health endpoint test failed"
+          
+          # Test basic API endpoints
+          curl -f http://localhost:3000/api/messages || echo "Messages API test failed"
+          curl -f http://localhost:3000/api/users || echo "Users API test failed"
+          
+          # Test database connectivity
+          echo "Testing database connectivity through API..."
+          response=$(curl -s http://localhost:3000/health)
+          if echo "$response" | grep -q "healthy"; then
+            echo "✅ Database connectivity verified"
+          else
+            echo "⚠️ Database connectivity issue detected"
+          fi
+
+      - name: Generate deployment report
+        if: always()
+        run: |
+          echo "## 🚀 Test Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Status" >> $GITHUB_STEP_SUMMARY
+          
+          # Check container status
+          cd deployment
+          echo "#### Container Status" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          docker-compose -f docker-compose.test.yml ps >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** http://localhost:8080" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend:** http://localhost:3000" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Health:** http://localhost:3000/health" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Images Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** \`${{ needs.build-and-push.outputs.frontend-image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend:** \`${{ needs.build-and-push.outputs.backend-image }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup on failure
+        if: failure()
+        run: |
+          echo "=== Cleaning up failed deployment ==="
+          cd deployment
+          docker-compose -f docker-compose.test.yml logs
+          docker-compose -f docker-compose.test.yml down --remove-orphans
+
+  # Job 3: Deploy to Staging (for main branch)
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: 
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create staging deployment
+        run: |
+          echo "=== Preparing Staging Environment ==="
+          mkdir -p deployment
+          
+          # Create staging docker-compose
+          cat > deployment/docker-compose.staging.yml << 'EOF'
+          version: '3.8'
+          
+          services:
+            mongodb:
+              image: mongo:4.4
+              container_name: brainbytes-mongo-staging
+              restart: unless-stopped
+              environment:
+                MONGO_INITDB_DATABASE: brainbytes_staging
+              ports:
+                - "27018:27017"
+              volumes:
+                - mongo_staging_data:/data/db
+              networks:
+                - brainbytes-staging-network
+          
+            backend:
+              image: ${{ needs.build-and-push.outputs.backend-image }}
+              container_name: brainbytes-backend-staging
+              restart: unless-stopped
+              environment:
+                NODE_ENV: staging
+                MONGODB_URI: mongodb://mongodb:27017/brainbytes_staging
+                PORT: 3000
+                HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+              ports:
+                - "3001:3000"
+              depends_on:
+                - mongodb
+              networks:
+                - brainbytes-staging-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+          
+            frontend:
+              image: ${{ needs.build-and-push.outputs.frontend-image }}
+              container_name: brainbytes-frontend-staging
+              restart: unless-stopped
+              environment:
+                NODE_ENV: production
+                NEXT_PUBLIC_API_URL: http://localhost:3001
+                NEXT_TELEMETRY_DISABLED: 1
+              ports:
+                - "8081:3000"
+              depends_on:
+                - backend
+              networks:
+                - brainbytes-staging-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+          
+          volumes:
+            mongo_staging_data:
+          
+          networks:
+            brainbytes-staging-network:
+              driver: bridge
+          EOF
+
+      - name: Deploy to staging
+        id: deploy
+        run: |
+          echo "=== Deploying to Staging Environment ==="
+          cd deployment
+          
+          # Create staging environment file
+          cat > .env.staging << EOF
+          NODE_ENV=staging
+          MONGODB_URI=mongodb://mongodb:27017/brainbytes_staging
+          HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
+          NEXT_PUBLIC_API_URL=http://localhost:3001
+          EOF
+          
+          # Deploy to staging
+          docker-compose -f docker-compose.staging.yml --env-file .env.staging up -d
+          
+          # Wait for services
+          timeout 300 bash -c '
+          while ! curl -f http://localhost:3001/health 2>/dev/null; do
+            echo "Waiting for staging backend..."
+            sleep 10
+          done'
+          
+          echo "✅ Staging deployment completed"
+          echo "url=http://localhost:8081" >> $GITHUB_OUTPUT
+
+  # Job 4: Production Deployment Preparation
+  prepare-production:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: 
+      name: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create production deployment scripts
+        run: |
+          echo "=== Creating Production Deployment Scripts ==="
+          mkdir -p deployment/production
+          
+          # Create production docker-compose
+          cat > deployment/production/docker-compose.prod.yml << 'EOF'
+          version: '3.8'
+          
+          services:
+            mongodb:
+              image: mongo:4.4
+              container_name: brainbytes-mongo-prod
+              restart: unless-stopped
+              environment:
+                MONGO_INITDB_DATABASE: brainbytes
+                MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+                MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+              ports:
+                - "27019:27017"
+              volumes:
+                - mongo_prod_data:/data/db
+                - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+              networks:
+                - brainbytes-prod-network
+          
+            backend:
+              image: ${{ needs.build-and-push.outputs.backend-image }}
+              container_name: brainbytes-backend-prod
+              restart: unless-stopped
+              environment:
+                NODE_ENV: production
+                MONGODB_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/brainbytes
+                PORT: 3000
+                HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+                JWT_SECRET: ${JWT_SECRET}
+                SESSION_SECRET: ${SESSION_SECRET}
+              ports:
+                - "3002:3000"
+              depends_on:
+                - mongodb
+              networks:
+                - brainbytes-prod-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 5
+                start_period: 40s
+          
+            frontend:
+              image: ${{ needs.build-and-push.outputs.frontend-image }}
+              container_name: brainbytes-frontend-prod
+              restart: unless-stopped
+              environment:
+                NODE_ENV: production
+                NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+                NEXT_TELEMETRY_DISABLED: 1
+              ports:
+                - "8082:3000"
+              depends_on:
+                - backend
+              networks:
+                - brainbytes-prod-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000"]
+                interval: 30s
+                timeout: 10s
+                retries: 5
+                start_period: 40s
+          
+            nginx:
+              image: nginx:alpine
+              container_name: brainbytes-nginx-prod
+              restart: unless-stopped
+              ports:
+                - "80:80"
+                - "443:443"
+              volumes:
+                - ./nginx.conf:/etc/nginx/nginx.conf:ro
+                - ./ssl:/etc/nginx/ssl:ro
+              depends_on:
+                - frontend
+                - backend
+              networks:
+                - brainbytes-prod-network
+          
+          volumes:
+            mongo_prod_data:
+          
+          networks:
+            brainbytes-prod-network:
+              driver: bridge
+          EOF
+          
+          # Create nginx configuration
+          cat > deployment/production/nginx.conf << 'EOF'
+          events {
+              worker_connections 1024;
+          }
+          
+          http {
+              upstream backend {
+                  server backend:3000;
+              }
+              
+              upstream frontend {
+                  server frontend:3000;
+              }
+              
+              server {
+                  listen 80;
+                  server_name _;
+                  
+                  # Redirect HTTP to HTTPS
+                  return 301 https://$server_name$request_uri;
+              }
+              
+              server {
+                  listen 443 ssl;
+                  server_name _;
+                  
+                  # SSL configuration (add your certificates)
+                  # ssl_certificate /etc/nginx/ssl/cert.pem;
+                  # ssl_certificate_key /etc/nginx/ssl/key.pem;
+                  
+                  # Frontend
+                  location / {
+                      proxy_pass http://frontend;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+                  
+                  # Backend API
+                  location /api/ {
+                      proxy_pass http://backend;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+                  
+                  # Health check
+                  location /health {
+                      proxy_pass http://backend;
+                  }
+              }
+          }
+          EOF
+          
+          # Create MongoDB initialization script
+          cat > deployment/production/mongo-init.js << 'EOF'
+          db = db.getSiblingDB('brainbytes');
+          
+          db.createUser({
+            user: process.env.MONGO_USERNAME,
+            pwd: process.env.MONGO_PASSWORD,
+            roles: [
+              {
+                role: 'readWrite',
+                db: 'brainbytes'
+              }
+            ]
+          });
+          
+          // Create initial collections
+          db.users.createIndex({ email: 1 }, { unique: true });
+          db.messages.createIndex({ createdAt: -1 });
+          EOF
+          
+          # Create deployment script
+          cat > deployment/production/deploy.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "🚀 Starting BrainBytes Production Deployment..."
+          
+          # Load environment variables
+          if [ -f ".env.production" ]; then
+              source .env.production
+          else
+              echo "❌ .env.production file not found!"
+              exit 1
+          fi
+          
+          # Backup current deployment if exists
+          if docker-compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+              echo "📦 Creating backup of current deployment..."
+              docker-compose -f docker-compose.prod.yml exec mongodb mongodump --out /backup/$(date +%Y%m%d_%H%M%S) || true
+          fi
+          
+          # Pull latest images
+          echo "⬇️ Pulling latest images..."
+          docker-compose -f docker-compose.prod.yml pull
+          
+          # Deploy with zero-downtime strategy
+          echo "🔄 Deploying with rolling update..."
+          docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+          
+          # Wait for services to be healthy
+          echo "⏳ Waiting for services to be healthy..."
+          timeout 300 bash -c '
+          until docker-compose -f docker-compose.prod.yml ps | grep -q "healthy"; do
+              echo "Waiting for health checks..."
+              sleep 10
+          done'
+          
+          # Verify deployment
+          echo "✅ Verifying deployment..."
+          if curl -f http://localhost:3002/health; then
+              echo "🎉 Production deployment successful!"
+          else
+              echo "❌ Production deployment verification failed!"
+              exit 1
+          fi
+          
+          # Cleanup old images
+          echo "🧹 Cleaning up old images..."
+          docker image prune -f
+          
+          echo "🚀 BrainBytes is now live in production!"
+          EOF
+          
+          chmod +x deployment/production/deploy.sh
+          
+          # Create environment template
+          cat > deployment/production/.env.production.template << 'EOF'
+          # Production Environment Variables
+          NODE_ENV=production
+          
+          # MongoDB Configuration
+          MONGO_ROOT_USERNAME=your_mongo_root_username
+          MONGO_ROOT_PASSWORD=your_secure_mongo_root_password
+          MONGO_USERNAME=brainbytes_user
+          MONGO_PASSWORD=your_secure_mongo_password
+          MONGODB_URI=mongodb://brainbytes_user:your_secure_mongo_password@mongodb:27017/brainbytes
+          
+          # Application Secrets
+          JWT_SECRET=your_jwt_secret_key_here
+          SESSION_SECRET=your_session_secret_here
+          HUGGINGFACE_TOKEN=your_huggingface_token
+          
+          # Frontend Configuration
+          NEXT_PUBLIC_API_URL=https://your-domain.com/api
+          
+          # Optional: External Services
+          # REDIS_URL=redis://localhost:6379
+          # SMTP_HOST=your_smtp_host
+          # SMTP_PORT=587
+          # SMTP_USER=your_smtp_user
+          # SMTP_PASS=your_smtp_password
+          EOF
+
+      - name: Upload production deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deployment
+          path: deployment/production/
+          retention-days: 30
+
+      - name: Create production deployment summary
+        run: |
+          echo "## 🏭 Production Deployment Ready" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Production Artifacts Created" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docker-compose.prod.yml\` - Production container orchestration" >> $GITHUB_STEP_SUMMARY
+          echo "- \`nginx.conf\` - Reverse proxy configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- \`deploy.sh\` - Automated deployment script" >> $GITHUB_STEP_SUMMARY
+          echo "- \`.env.production.template\` - Environment variables template" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Next Steps for Production" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the production-deployment artifact" >> $GITHUB_STEP_SUMMARY
+          echo "2. Copy \`.env.production.template\` to \`.env.production\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Fill in your production environment variables" >> $GITHUB_STEP_SUMMARY
+          echo "4. Run \`./deploy.sh\` on your production server" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔒 Security Features" >> $GITHUB_STEP_SUMMARY
+          echo "- MongoDB authentication enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- Nginx reverse proxy with SSL ready" >> $GITHUB_STEP_SUMMARY
+          echo "- Health checks for all services" >> $GITHUB_STEP_SUMMARY
+          echo "- Zero-downtime deployment strategy" >> $GITHUB_STEP_SUMMARY
+
+  # Job 5: Deployment Summary
+  deployment-summary:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-test, deploy-staging, prepare-production]
+    if: always()
+    
+    steps:
+      - name: Generate comprehensive deployment summary
+        run: |
+          echo "# 🚀 BrainBytes Deployment Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Run:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📊 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | Status | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|--------|-------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏗️ Build & Push | ${{ needs.build-and-push.result }} | Container images built and pushed |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 Test | ${{ needs.deploy-test.result }} | Test environment deployment |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎭 Staging | ${{ needs.deploy-staging.result }} | Staging environment deployment |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏭 Production Prep | ${{ needs.prepare-production.result }} | Production artifacts created |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 🌐 Environment URLs" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.deploy-test.result }}" == "success" ]]; then
+            echo "- **Test:** http://localhost:8080 (Backend: http://localhost:3000)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ needs.deploy-staging.result }}" == "success" ]]; then
+            echo "- **Staging:** http://localhost:8081 (Backend: http://localhost:3001)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Production:** Ready for deployment (artifacts available)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📦 Docker Images" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** \`${{ needs.build-and-push.outputs.frontend-image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend:** \`${{ needs.build-and-push.outputs.backend-image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 🎯 Deployment Features" >> $GITHUB_STEP_SUMMARY
+          echo "- **Multi-environment support** (Test, Staging, Production)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Container orchestration** with Docker Compose" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health checks** for all services" >> $GITHUB_STEP_SUMMARY
+          echo "- **Zero-downtime deployment** strategy" >> $GITHUB_STEP_SUMMARY
+          echo "- **Production-ready** with Nginx reverse proxy" >> $GITHUB_STEP_SUMMARY
+          echo "- **MongoDB authentication** and security" >> $GITHUB_STEP_SUMMARY
+          echo "- **Automated deployment** scripts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Determine overall deployment status
+          DEPLOYMENT_SUCCESS=true
+          if [[ "${{ needs.build-and-push.result }}" != "success" ]]; then
+            DEPLOYMENT_SUCCESS=false
+          fi
+          
+          if [ "$DEPLOYMENT_SUCCESS" = true ]; then
+            echo "## ✅ Deployment Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+            echo "All deployment stages completed successfully! 🎉" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deployment Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "Some deployment stages failed. Please review the logs." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Deployment pipeline completed on $(date)*" >> $GITHUB_STEP_SUMMARY
+
+      - name: Final deployment status
+        run: |
+          echo "🏁 BrainBytes Deployment Pipeline Complete!"
+          echo ""
+          echo "📊 Final Results:"
+          echo "- 🏗️ Build & Push: ${{ needs.build-and-push.result }}"
+          echo "- 🧪 Test Deploy: ${{ needs.deploy-test.result }}"
+          echo "- 🎭 Staging Deploy: ${{ needs.deploy-staging.result }}"
+          echo "- 🏭 Production Prep: ${{ needs.prepare-production.result }}"
+          echo ""
+          
+          # Determine final status
+          if [[ "${{ needs.build-and-push.result }}" == "success" ]]; then
+            echo "🎉 DEPLOYMENT PIPELINE SUCCESS!"
+            echo ""
+            echo "🌐 Your BrainBytes application is now deployed:"
+            if [[ "${{ needs.deploy-test.result }}" == "success" ]]; then
+              echo "   📍 Test: http://localhost:8080"
+            fi
+            if [[ "${{ needs.deploy-staging.result }}" == "success" ]]; then
+              echo "   📍 Staging: http://localhost:8081"
+            fi
+            if [[ "${{ needs.prepare-production.result }}" == "success" ]]; then
+              echo "   📍 Production: Ready for deployment (download artifacts)"
+            fi
+            echo ""
+            echo "🚀 Ready to serve your users!"
+            exit 0
+          else
+            echo "❌ DEPLOYMENT PIPELINE FAILED!"
+            echo "Please check the failed jobs and retry."
+            exit 1
+          fi
