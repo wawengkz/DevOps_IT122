@@ -40,8 +40,8 @@ jobs:
       contents: read
       packages: write
     outputs:
-      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
-      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-image: ${{ steps.build-frontend.outputs.image }}
+      backend-image: ${{ steps.build-backend.outputs.image }}
       frontend-digest: ${{ steps.build-frontend.outputs.digest }}
       backend-digest: ${{ steps.build-backend.outputs.digest }}
     
@@ -59,66 +59,68 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata for frontend
-      - name: Extract metadata for Frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      # Extract metadata for backend
-      - name: Extract metadata for Backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Generate image tags
+        id: meta
+        run: |
+          # Generate simple, consistent tags
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          SHORT_SHA=${GITHUB_SHA::8}
+          
+          # Frontend image name
+          FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${SHORT_SHA}"
+          BACKEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${SHORT_SHA}"
+          
+          echo "frontend-image=${FRONTEND_IMAGE}" >> $GITHUB_OUTPUT
+          echo "backend-image=${BACKEND_IMAGE}" >> $GITHUB_OUTPUT
+          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "short-sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
 
       # Build and push frontend image
       - name: Build and push Frontend image
         id: build-frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: |
+          FRONTEND_IMAGE="${{ steps.meta.outputs.frontend-image }}"
+          
+          echo "Building frontend image: ${FRONTEND_IMAGE}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            --tag "${FRONTEND_IMAGE}" \
+            --cache-from type=gha,scope=frontend \
+            --cache-to type=gha,mode=max,scope=frontend \
+            ./frontend
+          
+          echo "image=${FRONTEND_IMAGE}" >> $GITHUB_OUTPUT
+          echo "digest=$(docker buildx imagetools inspect ${FRONTEND_IMAGE} --format '{{ .Manifest.Digest }}')" >> $GITHUB_OUTPUT
 
       # Build and push backend image
       - name: Build and push Backend image
         id: build-backend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: |
+          BACKEND_IMAGE="${{ steps.meta.outputs.backend-image }}"
+          
+          echo "Building backend image: ${BACKEND_IMAGE}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            --tag "${BACKEND_IMAGE}" \
+            --cache-from type=gha,scope=backend \
+            --cache-to type=gha,mode=max,scope=backend \
+            ./backend
+          
+          echo "image=${BACKEND_IMAGE}" >> $GITHUB_OUTPUT
+          echo "digest=$(docker buildx imagetools inspect ${BACKEND_IMAGE} --format '{{ .Manifest.Digest }}')" >> $GITHUB_OUTPUT
 
       - name: Generate build summary
         run: |
           echo "## 🚀 Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Frontend Image" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tags:** \`${{ steps.meta-frontend.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`${{ steps.build-frontend.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Digest:** \`${{ steps.build-frontend.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Backend Image" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tags:** \`${{ steps.meta-backend.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`${{ steps.build-backend.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Digest:** \`${{ steps.build-backend.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
 
   # Job 2: Deploy to Test Environment
@@ -160,9 +162,14 @@ jobs:
                 - mongo_data:/data/db
               networks:
                 - brainbytes-network
+              healthcheck:
+                test: ["CMD", "mongo", "--eval", "db.runCommand({ping: 1})"]
+                interval: 30s
+                timeout: 10s
+                retries: 5
           
             backend:
-              image: ${{ needs.build-and-push.outputs.backend-image }}
+              image: ${BACKEND_IMAGE}
               container_name: brainbytes-backend-test
               restart: unless-stopped
               environment:
@@ -173,34 +180,38 @@ jobs:
               ports:
                 - "3000:3000"
               depends_on:
-                - mongodb
+                mongodb:
+                  condition: service_healthy
               networks:
                 - brainbytes-network
               healthcheck:
                 test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
                 interval: 30s
                 timeout: 10s
-                retries: 3
+                retries: 5
+                start_period: 60s
           
             frontend:
-              image: ${{ needs.build-and-push.outputs.frontend-image }}
+              image: ${FRONTEND_IMAGE}
               container_name: brainbytes-frontend-test
               restart: unless-stopped
               environment:
                 NODE_ENV: development
-                NEXT_PUBLIC_API_URL: http://backend:3000
+                NEXT_PUBLIC_API_URL: http://localhost:3000
                 NEXT_TELEMETRY_DISABLED: 1
               ports:
                 - "8080:3000"
               depends_on:
-                - backend
+                backend:
+                  condition: service_healthy
               networks:
                 - brainbytes-network
               healthcheck:
                 test: ["CMD", "curl", "-f", "http://localhost:3000"]
                 interval: 30s
                 timeout: 10s
-                retries: 3
+                retries: 5
+                start_period: 90s
           
           volumes:
             mongo_data:
@@ -214,13 +225,15 @@ jobs:
         run: |
           echo "=== Preparing Test Environment ==="
           
-          # Create environment file
+          # Create environment file with proper image references
           cat > deployment/.env.test << EOF
           NODE_ENV=test
           MONGODB_URI=mongodb://mongodb:27017/brainbytes_test
           HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
           NEXT_PUBLIC_API_URL=http://localhost:3000
           NEXT_TELEMETRY_DISABLED=1
+          FRONTEND_IMAGE=${{ needs.build-and-push.outputs.frontend-image }}
+          BACKEND_IMAGE=${{ needs.build-and-push.outputs.backend-image }}
           EOF
           
           # Clean up any existing containers
@@ -233,15 +246,24 @@ jobs:
           echo "=== Deploying to Test Environment ==="
           cd deployment
           
+          # Set environment variables for compose
+          export FRONTEND_IMAGE="${{ needs.build-and-push.outputs.frontend-image }}"
+          export BACKEND_IMAGE="${{ needs.build-and-push.outputs.backend-image }}"
+          export HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}"
+          
+          echo "Using Frontend Image: $FRONTEND_IMAGE"
+          echo "Using Backend Image: $BACKEND_IMAGE"
+          
           # Start services
           docker compose -f docker-compose.test.yml --env-file .env.test up -d
           
           # Wait for services to be healthy
           echo "Waiting for services to start..."
           timeout 300 bash -c '
-          while ! docker compose -f docker-compose.test.yml ps | grep -q "healthy\|Up"; do
+          while ! docker compose -f docker-compose.test.yml ps | grep -q "healthy"; do
             echo "Waiting for containers to be ready..."
-            sleep 10
+            docker compose -f docker-compose.test.yml ps
+            sleep 15
           done'
           
           # Verify deployment
@@ -257,7 +279,7 @@ jobs:
             exit 1
           fi
           
-          # Test frontend accessibility
+          # Test frontend accessibility  
           if curl -f http://localhost:8080; then
             echo "✅ Frontend is accessible"
           else
@@ -271,23 +293,44 @@ jobs:
         run: |
           echo "=== Running Deployment Verification Tests ==="
           
-          # Test API endpoints
+          # Test API endpoints that exist in your server.js
           echo "Testing API endpoints..."
           
           # Test health endpoint
-          curl -f http://localhost:3000/health || echo "Health endpoint test failed"
+          if curl -f http://localhost:3000/health; then
+            echo "✅ Health endpoint working"
+          else
+            echo "❌ Health endpoint test failed"
+          fi
           
-          # Test basic API endpoints
-          curl -f http://localhost:3000/api/messages || echo "Messages API test failed"
-          curl -f http://localhost:3000/api/users || echo "Users API test failed"
+          # Test basic API endpoints from your server.js
+          if curl -f http://localhost:3000/api/messages; then
+            echo "✅ Messages API working"
+          else
+            echo "⚠️ Messages API test failed"
+          fi
           
-          # Test database connectivity
+          if curl -f http://localhost:3000/api/users; then
+            echo "✅ Users API working"
+          else
+            echo "⚠️ Users API test failed"
+          fi
+          
+          # Test root endpoint
+          if curl -f http://localhost:3000/; then
+            echo "✅ Root endpoint working"
+          else
+            echo "❌ Root endpoint test failed"
+          fi
+          
+          # Test database connectivity through health endpoint
           echo "Testing database connectivity through API..."
           response=$(curl -s http://localhost:3000/health)
           if echo "$response" | grep -q "healthy"; then
             echo "✅ Database connectivity verified"
           else
             echo "⚠️ Database connectivity issue detected"
+            echo "Health response: $response"
           fi
 
       - name: Generate deployment report
@@ -320,6 +363,7 @@ jobs:
         run: |
           echo "=== Cleaning up failed deployment ==="
           cd deployment
+          echo "Container logs:"
           docker compose -f docker-compose.test.yml logs
           docker compose -f docker-compose.test.yml down --remove-orphans
 
@@ -358,9 +402,14 @@ jobs:
                 - mongo_staging_data:/data/db
               networks:
                 - brainbytes-staging-network
+              healthcheck:
+                test: ["CMD", "mongo", "--eval", "db.runCommand({ping: 1})"]
+                interval: 30s
+                timeout: 10s
+                retries: 5
           
             backend:
-              image: ${{ needs.build-and-push.outputs.backend-image }}
+              image: ${BACKEND_IMAGE}
               container_name: brainbytes-backend-staging
               restart: unless-stopped
               environment:
@@ -371,17 +420,19 @@ jobs:
               ports:
                 - "3001:3000"
               depends_on:
-                - mongodb
+                mongodb:
+                  condition: service_healthy
               networks:
                 - brainbytes-staging-network
               healthcheck:
                 test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
                 interval: 30s
                 timeout: 10s
-                retries: 3
+                retries: 5
+                start_period: 60s
           
             frontend:
-              image: ${{ needs.build-and-push.outputs.frontend-image }}
+              image: ${FRONTEND_IMAGE}
               container_name: brainbytes-frontend-staging
               restart: unless-stopped
               environment:
@@ -391,14 +442,16 @@ jobs:
               ports:
                 - "8081:3000"
               depends_on:
-                - backend
+                backend:
+                  condition: service_healthy
               networks:
                 - brainbytes-staging-network
               healthcheck:
                 test: ["CMD", "curl", "-f", "http://localhost:3000"]
                 interval: 30s
                 timeout: 10s
-                retries: 3
+                retries: 5
+                start_period: 90s
           
           volumes:
             mongo_staging_data:
@@ -414,12 +467,19 @@ jobs:
           echo "=== Deploying to Staging Environment ==="
           cd deployment
           
+          # Set environment variables
+          export FRONTEND_IMAGE="${{ needs.build-and-push.outputs.frontend-image }}"
+          export BACKEND_IMAGE="${{ needs.build-and-push.outputs.backend-image }}"
+          export HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}"
+          
           # Create staging environment file
           cat > .env.staging << EOF
           NODE_ENV=staging
           MONGODB_URI=mongodb://mongodb:27017/brainbytes_staging
           HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
           NEXT_PUBLIC_API_URL=http://localhost:3001
+          FRONTEND_IMAGE=${{ needs.build-and-push.outputs.frontend-image }}
+          BACKEND_IMAGE=${{ needs.build-and-push.outputs.backend-image }}
           EOF
           
           # Deploy to staging
@@ -429,7 +489,7 @@ jobs:
           timeout 300 bash -c '
           while ! curl -f http://localhost:3001/health 2>/dev/null; do
             echo "Waiting for staging backend..."
-            sleep 10
+            sleep 15
           done'
           
           echo "✅ Staging deployment completed"
@@ -452,8 +512,8 @@ jobs:
           echo "=== Creating Production Deployment Scripts ==="
           mkdir -p deployment/production
           
-          # Create production docker-compose
-          cat > deployment/production/docker-compose.prod.yml << 'EOF'
+          # Create production docker-compose with your actual images
+          cat > deployment/production/docker-compose.prod.yml << EOF
           version: '3.8'
           
           services:
@@ -463,8 +523,8 @@ jobs:
               restart: unless-stopped
               environment:
                 MONGO_INITDB_DATABASE: brainbytes
-                MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-                MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+                MONGO_INITDB_ROOT_USERNAME: \${MONGO_ROOT_USERNAME}
+                MONGO_INITDB_ROOT_PASSWORD: \${MONGO_ROOT_PASSWORD}
               ports:
                 - "27019:27017"
               volumes:
@@ -472,6 +532,11 @@ jobs:
                 - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
               networks:
                 - brainbytes-prod-network
+              healthcheck:
+                test: ["CMD", "mongo", "--eval", "db.runCommand({ping: 1})"]
+                interval: 30s
+                timeout: 10s
+                retries: 5
           
             backend:
               image: ${{ needs.build-and-push.outputs.backend-image }}
@@ -479,15 +544,16 @@ jobs:
               restart: unless-stopped
               environment:
                 NODE_ENV: production
-                MONGODB_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/brainbytes
+                MONGODB_URI: mongodb://\${MONGO_USERNAME}:\${MONGO_PASSWORD}@mongodb:27017/brainbytes
                 PORT: 3000
-                HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
-                JWT_SECRET: ${JWT_SECRET}
-                SESSION_SECRET: ${SESSION_SECRET}
+                HUGGINGFACE_TOKEN: \${HUGGINGFACE_TOKEN}
+                JWT_SECRET: \${JWT_SECRET}
+                SESSION_SECRET: \${SESSION_SECRET}
               ports:
                 - "3002:3000"
               depends_on:
-                - mongodb
+                mongodb:
+                  condition: service_healthy
               networks:
                 - brainbytes-prod-network
               healthcheck:
@@ -495,7 +561,7 @@ jobs:
                 interval: 30s
                 timeout: 10s
                 retries: 5
-                start_period: 40s
+                start_period: 60s
           
             frontend:
               image: ${{ needs.build-and-push.outputs.frontend-image }}
@@ -503,12 +569,13 @@ jobs:
               restart: unless-stopped
               environment:
                 NODE_ENV: production
-                NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+                NEXT_PUBLIC_API_URL: \${NEXT_PUBLIC_API_URL}
                 NEXT_TELEMETRY_DISABLED: 1
               ports:
                 - "8082:3000"
               depends_on:
-                - backend
+                backend:
+                  condition: service_healthy
               networks:
                 - brainbytes-prod-network
               healthcheck:
@@ -516,7 +583,7 @@ jobs:
                 interval: 30s
                 timeout: 10s
                 retries: 5
-                start_period: 40s
+                start_period: 90s
           
             nginx:
               image: nginx:alpine
@@ -674,7 +741,7 @@ jobs:
           
           chmod +x deployment/production/deploy.sh
           
-          # Create environment template
+          # Create environment template with your actual secrets
           cat > deployment/production/.env.production.template << 'EOF'
           # Production Environment Variables
           NODE_ENV=production
@@ -719,11 +786,9 @@ jobs:
           echo "- \`deploy.sh\` - Automated deployment script" >> $GITHUB_STEP_SUMMARY
           echo "- \`.env.production.template\` - Environment variables template" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Next Steps for Production" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download the production-deployment artifact" >> $GITHUB_STEP_SUMMARY
-          echo "2. Copy \`.env.production.template\` to \`.env.production\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Fill in your production environment variables" >> $GITHUB_STEP_SUMMARY
-          echo "4. Run \`./deploy.sh\` on your production server" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Images Ready for Production" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** \`${{ needs.build-and-push.outputs.frontend-image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend:** \`${{ needs.build-and-push.outputs.backend-image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔒 Security Features" >> $GITHUB_STEP_SUMMARY
           echo "- MongoDB authentication enabled" >> $GITHUB_STEP_SUMMARY
@@ -767,7 +832,7 @@ jobs:
           echo "- **Production:** Ready for deployment (artifacts available)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          echo "## 📦 Docker Images" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Docker Images Built" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend:** \`${{ needs.build-and-push.outputs.frontend-image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Backend:** \`${{ needs.build-and-push.outputs.backend-image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
