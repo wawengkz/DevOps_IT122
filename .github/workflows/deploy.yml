@@ -405,11 +405,6 @@ jobs:
                 - mongo_staging_data:/data/db
               networks:
                 - brainbytes-staging-network
-              healthcheck:
-                test: ["CMD", "mongo", "--eval", "db.runCommand({ping: 1})"]
-                interval: 30s
-                timeout: 10s
-                retries: 5
           
             backend:
               image: ${BACKEND_IMAGE}
@@ -423,16 +418,9 @@ jobs:
               ports:
                 - "3001:3000"
               depends_on:
-                mongodb:
-                  condition: service_healthy
+                - mongodb
               networks:
                 - brainbytes-staging-network
-              healthcheck:
-                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health", "||", "exit", "1"]
-                interval: 30s
-                timeout: 15s
-                retries: 10
-                start_period: 120s
           
             frontend:
               image: ${FRONTEND_IMAGE}
@@ -445,16 +433,9 @@ jobs:
               ports:
                 - "8081:3000"
               depends_on:
-                backend:
-                  condition: service_healthy
+                - backend
               networks:
                 - brainbytes-staging-network
-              healthcheck:
-                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000", "||", "exit", "1"]
-                interval: 30s
-                timeout: 15s
-                retries: 10
-                start_period: 180s
           
           volumes:
             mongo_staging_data:
@@ -485,14 +466,31 @@ jobs:
           BACKEND_IMAGE=${{ needs.build-and-push.outputs.backend-image }}
           EOF
           
-          # Deploy to staging
+          # Deploy to staging without strict health check dependencies
           docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
           
-          # Wait for services
-          timeout 300 bash -c '
+          # Wait for MongoDB to be ready first
+          echo "Waiting for MongoDB to be ready..."
+          timeout 120 bash -c '
+          while ! docker exec brainbytes-mongo-staging mongo --eval "db.runCommand({ping: 1})" 2>/dev/null; do
+            echo "Waiting for MongoDB..."
+            sleep 5
+          done'
+          
+          # Wait for backend to be ready
+          echo "Waiting for backend to be ready..."
+          timeout 180 bash -c '
           while ! curl -f http://localhost:3001/health 2>/dev/null; do
             echo "Waiting for staging backend..."
-            sleep 15
+            sleep 10
+          done'
+          
+          # Wait for frontend to be ready  
+          echo "Waiting for frontend to be ready..."
+          timeout 120 bash -c '
+          while ! curl -f http://localhost:8081 2>/dev/null; do
+            echo "Waiting for staging frontend..."
+            sleep 10
           done'
           
           echo "✅ Staging deployment completed"
