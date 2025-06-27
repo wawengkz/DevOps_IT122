@@ -428,11 +428,11 @@ jobs:
               networks:
                 - brainbytes-staging-network
               healthcheck:
-                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health", "||", "exit", "1"]
                 interval: 30s
-                timeout: 10s
-                retries: 5
-                start_period: 60s
+                timeout: 15s
+                retries: 10
+                start_period: 120s
           
             frontend:
               image: ${FRONTEND_IMAGE}
@@ -450,11 +450,11 @@ jobs:
               networks:
                 - brainbytes-staging-network
               healthcheck:
-                test: ["CMD", "curl", "-f", "http://localhost:3000"]
+                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000", "||", "exit", "1"]
                 interval: 30s
-                timeout: 10s
-                retries: 5
-                start_period: 90s
+                timeout: 15s
+                retries: 10
+                start_period: 180s
           
           volumes:
             mongo_staging_data:
