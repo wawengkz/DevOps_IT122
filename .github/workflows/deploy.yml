@@ -117,12 +117,9 @@ jobs:
           # Set Railway token as environment variable
           export RAILWAY_TOKEN=${{ secrets.RAILWAY_TOKEN }}
           
-          # Link to the specific project and environment first
-          echo "🔗 Linking to Railway project..."
-          railway link ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }}
-          
-          # Verify connection by checking status
-          railway status
+          # First, check if we can authenticate
+          echo "🔍 Testing Railway authentication..."
+          railway whoami
           
           echo "✅ Railway connection validated"
 
@@ -225,12 +222,9 @@ jobs:
           # Navigate to backend directory first
           cd backend
           
-          # Link to the specific project and service
-          echo "🔗 Linking to backend service..."
-          railway link ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }} --service ${{ secrets.RAILWAY_SERVICE_ID_BACKEND }}
-          
+          # Use Railway CLI with explicit service targeting
           echo "📤 Initiating backend deployment..."
-          if railway up --detach; then
+          if railway up --service ${{ secrets.RAILWAY_SERVICE_ID_BACKEND }} --project ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }}; then
             echo "status=success" >> $GITHUB_OUTPUT
             echo "✅ Backend deployment initiated successfully"
           else
@@ -422,12 +416,9 @@ jobs:
           # Navigate to frontend directory first
           cd frontend
           
-          # Link to the specific project and service
-          echo "🔗 Linking to frontend service..."
-          railway link ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }} --service ${{ secrets.RAILWAY_SERVICE_ID_FRONTEND }}
-          
+          # Use Railway CLI with explicit service targeting
           echo "📤 Initiating frontend deployment..."
-          if railway up --detach; then
+          if railway up --service ${{ secrets.RAILWAY_SERVICE_ID_FRONTEND }} --project ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }}; then
             echo "status=success" >> $GITHUB_OUTPUT
             echo "✅ Frontend deployment initiated successfully"
           else
