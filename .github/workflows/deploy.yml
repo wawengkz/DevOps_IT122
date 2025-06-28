@@ -364,8 +364,8 @@ jobs:
           echo "=== Preparing Staging Environment ==="
           mkdir -p deployment
           
-          # Create staging docker-compose with NO health check dependencies
-          cat > deployment/docker-compose.staging.yml << 'EOF'
+          # Create staging docker-compose template
+          cat > deployment/docker-compose.staging.template.yml << 'EOF'
           version: '3.8'
           
           services:
@@ -383,14 +383,14 @@ jobs:
                 - brainbytes-staging-network
           
             backend:
-              image: ${BACKEND_IMAGE}
+              image: BACKEND_IMAGE_PLACEHOLDER
               container_name: brainbytes-backend-staging
               restart: unless-stopped
               environment:
                 NODE_ENV: staging
                 MONGODB_URI: mongodb://mongodb:27017/brainbytes_staging
                 PORT: 3000
-                HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+                HUGGINGFACE_TOKEN: HUGGINGFACE_TOKEN_PLACEHOLDER
               ports:
                 - "3001:3000"
               depends_on:
@@ -399,7 +399,7 @@ jobs:
                 - brainbytes-staging-network
           
             frontend:
-              image: ${FRONTEND_IMAGE}
+              image: FRONTEND_IMAGE_PLACEHOLDER
               container_name: brainbytes-frontend-staging
               restart: unless-stopped
               environment:
@@ -427,20 +427,19 @@ jobs:
           echo "=== Deploying to Staging Environment ==="
           cd deployment
           
-          # Set environment variables
-          export FRONTEND_IMAGE="${{ needs.build-and-push.outputs.frontend-image }}"
-          export BACKEND_IMAGE="${{ needs.build-and-push.outputs.backend-image }}"
-          export HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}"
+          # Show the images we're using
+          echo "Using images:"
+          echo "FRONTEND_IMAGE=${{ needs.build-and-push.outputs.frontend-image }}"
+          echo "BACKEND_IMAGE=${{ needs.build-and-push.outputs.backend-image }}"
           
-          # Create staging environment file
-          cat > .env.staging << EOF
-          NODE_ENV=staging
-          MONGODB_URI=mongodb://mongodb:27017/brainbytes_staging
-          HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
-          NEXT_PUBLIC_API_URL=http://localhost:3001
-          FRONTEND_IMAGE=${{ needs.build-and-push.outputs.frontend-image }}
-          BACKEND_IMAGE=${{ needs.build-and-push.outputs.backend-image }}
-          EOF
+          # Replace placeholders with actual values to create the final docker-compose file
+          sed "s|FRONTEND_IMAGE_PLACEHOLDER|${{ needs.build-and-push.outputs.frontend-image }}|g" docker-compose.staging.template.yml > docker-compose.staging.yml
+          sed -i "s|BACKEND_IMAGE_PLACEHOLDER|${{ needs.build-and-push.outputs.backend-image }}|g" docker-compose.staging.yml
+          sed -i "s|HUGGINGFACE_TOKEN_PLACEHOLDER|${{ secrets.HUGGINGFACE_TOKEN }}|g" docker-compose.staging.yml
+          
+          # Show the final docker-compose file for debugging
+          echo "Final docker-compose.staging.yml:"
+          cat docker-compose.staging.yml
           
           # Clean up any existing staging containers
           echo "Cleaning up existing staging containers..."
@@ -448,7 +447,7 @@ jobs:
           
           # Deploy to staging
           echo "Starting staging containers..."
-          docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+          docker compose -f docker-compose.staging.yml up -d
           
           # Wait for MongoDB to be ready first (shorter timeout)
           echo "Waiting for MongoDB to be ready..."
