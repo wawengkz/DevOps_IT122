@@ -113,10 +113,12 @@ jobs:
       - name: Validate Railway connection
         run: |
           echo "🔐 Validating Railway connection..."
-          railway login --token ${{ secrets.RAILWAY_TOKEN }}
           
-          # Verify project access
-          railway status --project ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }}
+          # Set Railway token as environment variable (newer CLI method)
+          export RAILWAY_TOKEN=${{ secrets.RAILWAY_TOKEN }}
+          
+          # Verify connection by checking status
+          railway status
           
           echo "✅ Railway connection validated"
 
@@ -213,8 +215,8 @@ jobs:
           echo "🚀 Deploying Backend to Railway..."
           START_TIME=$(date +%s)
           
-          # Login to Railway
-          railway login --token ${{ secrets.RAILWAY_TOKEN }}
+          # Set Railway token as environment variable
+          export RAILWAY_TOKEN=${{ secrets.RAILWAY_TOKEN }}
           
           # Set project context
           export RAILWAY_PROJECT_ID=${{ env.RAILWAY_PROJECT_ID }}
@@ -410,8 +412,8 @@ jobs:
           echo "🚀 Deploying Frontend to Railway..."
           START_TIME=$(date +%s)
           
-          # Login to Railway
-          railway login --token ${{ secrets.RAILWAY_TOKEN }}
+          # Set Railway token as environment variable
+          export RAILWAY_TOKEN=${{ secrets.RAILWAY_TOKEN }}
           
           # Set project context
           export RAILWAY_PROJECT_ID=${{ env.RAILWAY_PROJECT_ID }}
