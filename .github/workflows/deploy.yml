@@ -222,9 +222,9 @@ jobs:
           # Navigate to backend directory first
           cd backend
           
-          # Use Railway CLI with explicit service targeting
+          # Simple deployment approach
           echo "📤 Initiating backend deployment..."
-          if railway up --service ${{ secrets.RAILWAY_SERVICE_ID_BACKEND }} --project ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }}; then
+          if RAILWAY_SERVICE=${{ secrets.RAILWAY_SERVICE_ID_BACKEND }} railway up; then
             echo "status=success" >> $GITHUB_OUTPUT
             echo "✅ Backend deployment initiated successfully"
           else
@@ -416,9 +416,9 @@ jobs:
           # Navigate to frontend directory first
           cd frontend
           
-          # Use Railway CLI with explicit service targeting
+          # Simple deployment approach
           echo "📤 Initiating frontend deployment..."
-          if railway up --service ${{ secrets.RAILWAY_SERVICE_ID_FRONTEND }} --project ${{ env.RAILWAY_PROJECT_ID }} --environment ${{ env.RAILWAY_ENVIRONMENT_ID }}; then
+          if RAILWAY_SERVICE=${{ secrets.RAILWAY_SERVICE_ID_FRONTEND }} railway up; then
             echo "status=success" >> $GITHUB_OUTPUT
             echo "✅ Frontend deployment initiated successfully"
           else
