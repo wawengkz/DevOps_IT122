@@ -1,0 +1,61 @@
+# Prometheus Configuration for BrainBytes Application
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# Scrape configuration
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          app: 'prometheus'
+
+  # BrainBytes Backend API
+  - job_name: 'brainbytes-backend'
+    static_configs:
+      - targets: ['backend:3000']
+        labels:
+          app: 'brainbytes-backend'
+          service: 'api'
+    metrics_path: '/metrics'  # Default path, adjust if your app exposes metrics elsewhere
+    scrape_interval: 15s
+
+  # BrainBytes Frontend
+  - job_name: 'brainbytes-frontend'
+    static_configs:
+      - targets: ['frontend:3000']
+        labels:
+          app: 'brainbytes-frontend'
+          service: 'web'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Node Exporter for host-level metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          app: 'node-exporter'
+          service: 'system-metrics'
+
+  # MongoDB metrics (commented out - can be added later)
+  # - job_name: 'mongodb'
+  #   static_configs:
+  #     - targets: ['mongodb-exporter:9216']
+  #       labels:
+  #         app: 'mongodb'
+  #         service: 'database'

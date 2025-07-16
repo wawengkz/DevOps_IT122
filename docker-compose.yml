@@ -16,6 +16,8 @@ services:
       timeout: 15s
       retries: 10
       start_period: 90s
+    networks:
+      - brainbytes-network
 
   backend:
     build: ./backend
@@ -33,6 +35,8 @@ services:
       mongo:
         condition: service_healthy
     restart: "no"
+    networks:
+      - brainbytes-network
 
   mongo:
     image: mongo:4.4
@@ -48,8 +52,54 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - brainbytes-network
+
+  # Prometheus monitoring
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
+
+  # Node Exporter for host metrics
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
 
 volumes:
   mongo-data:
   backend_node_modules:
   frontend_node_modules:
+  prometheus-data:
+
+networks:
+  brainbytes-network:
+    driver: bridge
