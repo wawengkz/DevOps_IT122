@@ -1,0 +1,84 @@
+groups:
+- name: brainbytes_alerts
+  rules:
+  # Service availability alerts
+  - alert: ServiceDown
+    expr: up == 0
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "Service {{ $labels.instance }} is down"
+      description: "{{ $labels.instance }} has been down for more than 30 seconds."
+
+  # Database connectivity
+  - alert: DatabaseConnectionLost
+    expr: brainbytes_db_connections{status="active"} == 0
+    for: 10s
+    labels:
+      severity: critical
+    annotations:
+      summary: "BrainBytes database connection lost"
+      description: "The application has lost connection to MongoDB."
+
+  # High error rate
+  - alert: HighErrorRate
+    expr: rate(brainbytes_errors_total[5m]) > 0.1
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High error rate detected"
+      description: "BrainBytes is experiencing {{ $value }} errors per second."
+
+  # Slow AI responses
+  - alert: SlowAIResponses
+    expr: rate(brainbytes_ai_response_time_seconds_sum[5m]) / rate(brainbytes_ai_response_time_seconds_count[5m]) > 10
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "AI responses are slow"
+      description: "Average AI response time is {{ $value }} seconds over the last 5 minutes."
+
+  # High memory usage
+  - alert: HighMemoryUsage
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage"
+      description: "Memory usage is above 80% ({{ $value }}%)"
+
+  # High CPU usage
+  - alert: HighCPUUsage
+    expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage"
+      description: "CPU usage is above 80% ({{ $value }}%)"
+
+  # No recent questions (business metric)
+  - alert: NoRecentQuestions
+    expr: increase(brainbytes_questions_total[10m]) == 0
+    for: 10m
+    labels:
+      severity: info
+    annotations:
+      summary: "No questions asked recently"
+      description: "No questions have been asked in the last 10 minutes."
+
+- name: container_alerts
+  rules:
+  # Container resource limits
+  - alert: ContainerHighMemory
+    expr: container_memory_usage_bytes{name="brainbytes-backend"} / 1024 / 1024 > 500
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container using high memory"
+      description: "Backend container is using {{ $value }}MB of memory."

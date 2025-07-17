@@ -1,5 +1,24 @@
 {
   "dependencies": {
+    "express": "^5.1.0",
     "node-fetch": "^3.3.2"
-  }
+  },
+  "name": "devops_it122",
+  "version": "1.0.0",
+  "description": "BrainBytes CI/CD Documentation\r This document explains the Continuous Integration and Continuous Deployment (CI/CD) setup for the BrainBytes AI tutoring platform.\r Workflows Overview\r Main Workflow (main.yml)\r Purpose: Comprehensive CI pipeline that runs linting, testing, and building on every push and pull request.\r Stages:",
+  "main": "alert-receiver.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wawengkz/DevOps_IT122.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/wawengkz/DevOps_IT122/issues"
+  },
+  "homepage": "https://github.com/wawengkz/DevOps_IT122#readme"
 }

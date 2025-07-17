@@ -1,0 +1,114 @@
+groups:
+- name: philippines_context_alerts
+  rules:
+  # Network instability alerts (common in Philippines)
+  - alert: NetworkInstability
+    expr: rate(brainbytes_connection_drops_total[5m]) > 5
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Network instability detected"
+      description: "High rate of connection drops detected, which could affect users with intermittent connectivity"
+
+  # Mobile user experience alerts
+  - alert: SlowMobileResponses
+    expr: histogram_quantile(0.95, rate(brainbytes_http_request_duration_seconds_bucket{user_agent=~".*Mobile.*"}[5m])) > 3
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Slow mobile response times"
+      description: "95th percentile of mobile response time is above 3 seconds for 5 minutes"
+
+  # Data usage alerts (important for limited data plans)
+  - alert: HighDataUsage
+    expr: sum(rate(brainbytes_response_size_bytes_sum[1h])) / 1024 / 1024 > 50
+    for: 15m
+    labels:
+      severity: info
+    annotations:
+      summary: "High data usage detected"
+      description: "Application is sending more than 50MB of data per hour, which may impact users with limited data plans"
+
+  # Peak hours performance (Philippine timezone aware)
+  - alert: PeakHoursPerformance
+    expr: (hour() >= 18 and hour() <= 22) and rate(brainbytes_ai_response_time_seconds_sum[5m]) / rate(brainbytes_ai_response_time_seconds_count[5m]) > 5
+    for: 3m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Poor performance during peak hours"
+      description: "AI response times are degraded during peak usage hours (6-10 PM PHT)"
+
+  # Low bandwidth optimization alerts
+  - alert: LargResponsePayloads
+    expr: histogram_quantile(0.90, rate(brainbytes_response_size_bytes_bucket[10m])) > 100000
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Large response payloads detected"
+      description: "90th percentile of response sizes is above 100KB, which may be slow for users on 2G/3G connections"
+
+  # Regional connectivity issues
+  - alert: HighLatencyResponses
+    expr: histogram_quantile(0.95, rate(brainbytes_http_request_duration_seconds_bucket[5m])) > 10
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Very high latency responses"
+      description: "95th percentile response time exceeds 10 seconds, indicating possible regional connectivity issues"
+
+  # Educational usage patterns (specific to tutoring app)
+  - alert: LowStudentEngagement
+    expr: rate(brainbytes_questions_total[30m]) < 0.1
+    for: 30m
+    labels:
+      severity: info
+    annotations:
+      summary: "Low student engagement detected"
+      description: "Question rate is below 0.1 per minute for 30 minutes during typical study hours"
+
+  # Mobile-first alerts (Philippines is mobile-first market)
+  - alert: LowMobileUsage
+    expr: (rate(brainbytes_mobile_requests_total[1h]) / rate(brainbytes_http_requests_total[1h])) * 100 < 70
+    for: 2h
+    labels:
+      severity: info
+    annotations:
+      summary: "Lower than expected mobile usage"
+      description: "Mobile requests are less than 70% of total traffic, which is unusual for Philippine market"
+
+  # Typhoon season / weather-related connectivity
+  - alert: UnusualTrafficDrop
+    expr: rate(brainbytes_http_requests_total[1h]) < (rate(brainbytes_http_requests_total[24h] offset 24h) * 0.3)
+    for: 1h
+    labels:
+      severity: warning
+    annotations:
+      summary: "Unusual traffic drop detected"
+      description: "Current traffic is less than 30% of same time yesterday, possibly due to weather or infrastructure issues"
+
+- name: philippine_business_hours
+  rules:
+  # School hours monitoring (Philippines school schedule)
+  - alert: SystemIssuesDuringSchoolHours
+    expr: (hour() >= 8 and hour() <= 17) and (up{job="brainbytes-backend"} == 0 or rate(brainbytes_errors_total[5m]) > 0.1)
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "System issues during school hours"
+      description: "Critical system problems detected during Philippine school hours (8 AM - 5 PM PHT)"
+
+  # Weekend usage patterns
+  - alert: WeekendPerformanceIssues
+    expr: (day_of_week() == 0 or day_of_week() == 6) and rate(brainbytes_ai_response_time_seconds_sum[10m]) / rate(brainbytes_ai_response_time_seconds_count[10m]) > 8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Performance issues during weekend study time"
+      description: "AI response times are degraded during weekend study periods"

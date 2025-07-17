@@ -1,0 +1,37 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@brainbytes.local'
+
+route:
+  group_by: ['alertname']
+  group_wait: 5s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'brainbytes-webhook'
+
+receivers:
+- name: 'brainbytes-webhook'
+  webhook_configs:
+  - url: 'http://host.docker.internal:5001/alert'
+    send_resolved: true
+    http_config:
+      follow_redirects: true
+
+# For email notifications (optional)
+# - name: 'email-notifications'
+#   email_configs:
+#   - to: 'admin@brainbytes.com'
+#     subject: 'BrainBytes Alert: {{ .GroupLabels.alertname }}'
+#     body: |
+#       {{ range .Alerts }}
+#       Alert: {{ .Annotations.summary }}
+#       Description: {{ .Annotations.description }}
+#       {{ end }}
+
+# For Slack notifications (optional)
+# - name: 'slack-notifications'
+#   slack_configs:
+#   - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+#     channel: '#alerts'
+#     title: 'BrainBytes Alert'
+#     text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'

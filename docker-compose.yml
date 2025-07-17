@@ -63,7 +63,9 @@ services:
       - "9091:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
       - prometheus-data:/prometheus
+      - ./monitoring/philippines_alerts.yml:/etc/prometheus/philippines_alerts.yml
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -71,6 +73,23 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
+
+  # Alertmanager for handling alerts
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
     restart: unless-stopped
     networks:
       - brainbytes-network
@@ -99,6 +118,7 @@ volumes:
   backend_node_modules:
   frontend_node_modules:
   prometheus-data:
+  alertmanager-data:
 
 networks:
   brainbytes-network:
