@@ -8,12 +8,14 @@ let metricsAvailable = false;
 let metrics = {};
 
 try {
-  metrics = require('./metrics');
+  metrics = require("./metrics");
   metricsAvailable = true;
-  console.log('✅ Prometheus metrics loaded successfully');
+  console.log("✅ Prometheus metrics loaded successfully");
 } catch (error) {
-  console.warn('⚠️ Prometheus metrics not available:', error.message);
-  console.warn('📋 Rebuild container to enable metrics: docker-compose build --no-cache backend');
+  console.warn("⚠️ Prometheus metrics not available:", error.message);
+  console.warn(
+    "📋 Rebuild container to enable metrics: docker-compose build --no-cache backend",
+  );
   // Create dummy functions to prevent errors
   metrics = {
     register: null,
@@ -22,7 +24,7 @@ try {
     questionCounter: { labels: () => ({ inc: () => {} }) },
     tutoringSessions: { labels: () => ({ inc: () => {} }) },
     dbConnections: { labels: () => ({ set: () => {} }) },
-    errorCounter: { labels: () => ({ inc: () => {} }) }
+    errorCounter: { labels: () => ({ inc: () => {} }) },
   };
 }
 
@@ -36,7 +38,7 @@ app.use(express.json());
 // Add metrics middleware only if available
 if (metricsAvailable) {
   app.use(metrics.metricsMiddleware);
-  console.log('📊 Metrics middleware enabled');
+  console.log("📊 Metrics middleware enabled");
 }
 
 // Initialize AI model
@@ -52,25 +54,25 @@ mongoose
   .then(() => {
     console.log("Connected to MongoDB");
     if (metricsAvailable) {
-      metrics.dbConnections.labels('active').set(1);
+      metrics.dbConnections.labels("active").set(1);
     }
   })
   .catch((err) => {
     console.error("Failed to connect to MongoDB:", err);
     if (metricsAvailable) {
-      metrics.dbConnections.labels('active').set(0);
-      metrics.errorCounter.labels('database', 'connection').inc();
+      metrics.dbConnections.labels("active").set(0);
+      metrics.errorCounter.labels("database", "connection").inc();
     }
   });
 
 // Monitor MongoDB connection state
 if (metricsAvailable) {
-  mongoose.connection.on('connected', () => {
-    metrics.dbConnections.labels('active').set(1);
+  mongoose.connection.on("connected", () => {
+    metrics.dbConnections.labels("active").set(1);
   });
 
-  mongoose.connection.on('disconnected', () => {
-    metrics.dbConnections.labels('active').set(0);
+  mongoose.connection.on("disconnected", () => {
+    metrics.dbConnections.labels("active").set(0);
   });
 }
 
@@ -118,13 +120,15 @@ app.get("/", (req, res) => {
 });
 
 // Metrics endpoint with dynamic loading
-app.get('/metrics', async (req, res) => {
+app.get("/metrics", async (req, res) => {
   if (metricsAvailable && metrics.register) {
-    res.set('Content-Type', metrics.register.contentType);
+    res.set("Content-Type", metrics.register.contentType);
     res.end(await metrics.register.metrics());
   } else {
-    res.set('Content-Type', 'text/plain');
-    res.send('# Metrics endpoint ready - prom-client not available\n# Rebuild container to enable full metrics: docker-compose build --no-cache backend\n# Check if prom-client is installed: docker-compose exec backend npm list prom-client\n');
+    res.set("Content-Type", "text/plain");
+    res.send(
+      "# Metrics endpoint ready - prom-client not available\n# Rebuild container to enable full metrics: docker-compose build --no-cache backend\n# Check if prom-client is installed: docker-compose exec backend npm list prom-client\n",
+    );
   }
 });
 
@@ -135,7 +139,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     mongodb:
       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    metricsAvailable: metricsAvailable
+    metricsAvailable: metricsAvailable,
   });
 });
 
@@ -146,7 +150,7 @@ app.get("/api/messages", async (req, res) => {
     res.json(messages);
   } catch (err) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/messages').inc();
+      metrics.errorCounter.labels("database", "/api/messages").inc();
     }
     res.status(500).json({ error: err.message });
   }
@@ -155,7 +159,7 @@ app.get("/api/messages", async (req, res) => {
 // Create a new message and get AI response
 app.post("/api/messages", async (req, res) => {
   const aiStartTime = Date.now();
-  
+
   try {
     // Get user ID (from request or use anonymous)
     const userId = req.body.userId || "anonymous";
@@ -183,7 +187,7 @@ app.post("/api/messages", async (req, res) => {
     ]).catch((error) => {
       console.error("AI response timed out or failed:", error);
       if (metricsAvailable) {
-        metrics.errorCounter.labels('ai_timeout', '/api/messages').inc();
+        metrics.errorCounter.labels("ai_timeout", "/api/messages").inc();
       }
       return {
         category: "error",
@@ -199,12 +203,24 @@ app.post("/api/messages", async (req, res) => {
     // Record AI response time metrics
     if (metricsAvailable) {
       const aiDuration = (Date.now() - aiStartTime) / 1000;
-      const category = aiResult.category || 'unknown';
-      const complexity = aiResult.questionType === 'definition' ? 'basic' : 
-                        aiResult.questionType === 'explanation' ? 'intermediate' : 'advanced';
-      
-      metrics.aiResponseTimeHistogram.labels(category, complexity).observe(aiDuration);
-      metrics.questionCounter.labels(category, 'unknown', aiResult.category === 'error' ? 'failed' : 'answered').inc();
+      const category = aiResult.category || "unknown";
+      const complexity =
+        aiResult.questionType === "definition"
+          ? "basic"
+          : aiResult.questionType === "explanation"
+            ? "intermediate"
+            : "advanced";
+
+      metrics.aiResponseTimeHistogram
+        .labels(category, complexity)
+        .observe(aiDuration);
+      metrics.questionCounter
+        .labels(
+          category,
+          "unknown",
+          aiResult.category === "error" ? "failed" : "answered",
+        )
+        .inc();
     }
 
     console.log(
@@ -231,7 +247,7 @@ app.post("/api/messages", async (req, res) => {
   } catch (err) {
     console.error("Error in /api/messages route:", err);
     if (metricsAvailable) {
-      metrics.errorCounter.labels('general', '/api/messages').inc();
+      metrics.errorCounter.labels("general", "/api/messages").inc();
     }
     res.status(400).json({ error: err.message });
   }
@@ -245,7 +261,7 @@ app.post("/api/users", async (req, res) => {
     res.json({ success: true, user: result });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('validation', '/api/users').inc();
+      metrics.errorCounter.labels("validation", "/api/users").inc();
     }
     res.status(400).json({ success: false, error: error.message });
   }
@@ -257,7 +273,7 @@ app.get("/api/users", async (req, res) => {
     res.json({ success: true, users });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/users').inc();
+      metrics.errorCounter.labels("database", "/api/users").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -273,7 +289,7 @@ app.get("/api/users/:id", async (req, res) => {
     res.json({ success: true, user });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/users/:id').inc();
+      metrics.errorCounter.labels("database", "/api/users/:id").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -291,7 +307,7 @@ app.put("/api/users/:id", async (req, res) => {
     res.json({ success: true, user });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/users/:id').inc();
+      metrics.errorCounter.labels("database", "/api/users/:id").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -307,7 +323,7 @@ app.delete("/api/users/:id", async (req, res) => {
     res.json({ success: true, message: "User deleted successfully" });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/users/:id').inc();
+      metrics.errorCounter.labels("database", "/api/users/:id").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -318,16 +334,16 @@ app.post("/api/materials", async (req, res) => {
   try {
     const newMaterial = new LearningMaterial(req.body);
     const result = await newMaterial.save();
-    
+
     // Record tutoring session metric based on subject
     if (metricsAvailable && req.body.subject) {
-      metrics.tutoringSessions.labels(req.body.subject, 'unknown').inc();
+      metrics.tutoringSessions.labels(req.body.subject, "unknown").inc();
     }
-    
+
     res.json({ success: true, material: result });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('validation', '/api/materials').inc();
+      metrics.errorCounter.labels("validation", "/api/materials").inc();
     }
     res.status(400).json({ success: false, error: error.message });
   }
@@ -344,7 +360,7 @@ app.get("/api/materials", async (req, res) => {
     res.json({ success: true, materials });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/materials').inc();
+      metrics.errorCounter.labels("database", "/api/materials").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -360,7 +376,7 @@ app.get("/api/materials/:id", async (req, res) => {
     res.json({ success: true, material });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/materials/:id').inc();
+      metrics.errorCounter.labels("database", "/api/materials/:id").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -380,7 +396,7 @@ app.put("/api/materials/:id", async (req, res) => {
     res.json({ success: true, material });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/materials/:id').inc();
+      metrics.errorCounter.labels("database", "/api/materials/:id").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -396,7 +412,7 @@ app.delete("/api/materials/:id", async (req, res) => {
     res.json({ success: true, message: "Material deleted successfully" });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels('database', '/api/materials/:id').inc();
+      metrics.errorCounter.labels("database", "/api/materials/:id").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -407,9 +423,13 @@ const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check available at http://localhost:${PORT}/health`);
   if (metricsAvailable) {
-    console.log(`📊 Prometheus metrics available at http://localhost:${PORT}/metrics`);
+    console.log(
+      `📊 Prometheus metrics available at http://localhost:${PORT}/metrics`,
+    );
   } else {
-    console.log(`⚠️  Basic metrics available at http://localhost:${PORT}/metrics`);
+    console.log(
+      `⚠️  Basic metrics available at http://localhost:${PORT}/metrics`,
+    );
   }
 });
 
