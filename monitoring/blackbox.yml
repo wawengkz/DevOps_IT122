@@ -1,0 +1,165 @@
+# Blackbox Exporter Configuration for BrainBytes
+modules:
+  # Basic HTTP 200 check
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      follow_redirects: true
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+      preferred_ip_protocol: "ip4"
+
+  # API health check with JSON response validation
+  http_api_health:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      fail_if_body_not_matches_regexp:
+        - '"status":\s*"healthy"'
+      headers:
+        Accept: application/json
+      follow_redirects: true
+
+  # POST request check for AI endpoints
+  http_post_ai:
+    prober: http
+    timeout: 30s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200, 201]
+      method: POST
+      headers:
+        Content-Type: application/json
+      body: '{"text": "What is 2+2?", "subject": "math"}'
+      fail_if_body_not_matches_regexp:
+        - '"text":\s*".*"'
+
+  # Database connectivity check
+  http_db_check:
+    prober: http
+    timeout: 15s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      fail_if_body_not_matches_regexp:
+        - '"mongodb":\s*"connected"'
+
+  # Mobile-optimized check (simulating mobile user agent)
+  http_mobile_check:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      headers:
+        User-Agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
+      follow_redirects: true
+
+  # Slow connection simulation (for Philippine network conditions)
+  http_slow_network:
+    prober: http
+    timeout: 30s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      follow_redirects: true
+      headers:
+        Connection: "keep-alive"
+      fail_if_body_not_matches_regexp:
+        - ".*"
+
+  # HTTPS SSL certificate check
+  http_ssl_check:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+      tls_config:
+        insecure_skip_verify: false
+
+  # TCP connectivity check
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+
+  # MongoDB TCP check
+  tcp_mongodb:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+      query_response:
+        - expect: ".*"
+
+  # DNS resolution check
+  dns_lookup:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: "brainbytes.local"
+      query_type: "A"
+      valid_rcodes:
+        - "NOERROR"
+
+  # ICMP ping check
+  icmp_ping:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"
+      source_ip_address: "0.0.0.0"
+
+  # HTTP check with basic authentication
+  http_basic_auth:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      basic_auth:
+        username: "admin"
+        password: "password"
+
+  # Large response check (for bandwidth testing)
+  http_large_response:
+    prober: http
+    timeout: 30s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      fail_if_body_not_matches_regexp:
+        - ".*"
+      headers:
+        Accept-Encoding: "gzip, deflate"
+
+  # Metrics endpoint check
+  http_metrics:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      headers:
+        Accept: "text/plain"
+      fail_if_body_not_matches_regexp:
+        - "# HELP.*"
+        - "# TYPE.*"

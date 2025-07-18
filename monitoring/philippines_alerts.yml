@@ -1,114 +1,428 @@
 groups:
-- name: philippines_context_alerts
+# Enhanced Philippines context alerts
+- name: philippines_enhanced_alerts
   rules:
-  # Network instability alerts (common in Philippines)
-  - alert: NetworkInstability
-    expr: rate(brainbytes_connection_drops_total[5m]) > 5
-    for: 2m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Network instability detected"
-      description: "High rate of connection drops detected, which could affect users with intermittent connectivity"
-
-  # Mobile user experience alerts
-  - alert: SlowMobileResponses
-    expr: histogram_quantile(0.95, rate(brainbytes_http_request_duration_seconds_bucket{user_agent=~".*Mobile.*"}[5m])) > 3
-    for: 5m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Slow mobile response times"
-      description: "95th percentile of mobile response time is above 3 seconds for 5 minutes"
-
-  # Data usage alerts (important for limited data plans)
-  - alert: HighDataUsage
-    expr: sum(rate(brainbytes_response_size_bytes_sum[1h])) / 1024 / 1024 > 50
-    for: 15m
-    labels:
-      severity: info
-    annotations:
-      summary: "High data usage detected"
-      description: "Application is sending more than 50MB of data per hour, which may impact users with limited data plans"
-
-  # Peak hours performance (Philippine timezone aware)
-  - alert: PeakHoursPerformance
-    expr: (hour() >= 18 and hour() <= 22) and rate(brainbytes_ai_response_time_seconds_sum[5m]) / rate(brainbytes_ai_response_time_seconds_count[5m]) > 5
-    for: 3m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Poor performance during peak hours"
-      description: "AI response times are degraded during peak usage hours (6-10 PM PHT)"
-
-  # Low bandwidth optimization alerts
-  - alert: LargResponsePayloads
-    expr: histogram_quantile(0.90, rate(brainbytes_response_size_bytes_bucket[10m])) > 100000
-    for: 5m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Large response payloads detected"
-      description: "90th percentile of response sizes is above 100KB, which may be slow for users on 2G/3G connections"
-
-  # Regional connectivity issues
-  - alert: HighLatencyResponses
-    expr: histogram_quantile(0.95, rate(brainbytes_http_request_duration_seconds_bucket[5m])) > 10
+  
+  # Enhanced mobile performance alerts
+  - alert: CriticalMobilePerformancePhilippines
+    expr: |
+      histogram_quantile(0.90, 
+        rate(brainbytes_http_request_duration_seconds_bucket
+          {user_agent=~".*Mobile.*", method="GET"}[5m])
+      ) > 5
     for: 3m
     labels:
       severity: critical
+      context: philippine_mobile
+      impact: high
     annotations:
-      summary: "Very high latency responses"
-      description: "95th percentile response time exceeds 10 seconds, indicating possible regional connectivity issues"
+      summary: "Critical mobile performance in Philippines"
+      description: "90th percentile mobile response time exceeds 5 seconds for Philippine mobile users"
+      impact: "Students on mobile networks (majority of users) cannot effectively use the platform"
+      remediation: "Immediately optimize mobile assets, enable emergency low-bandwidth mode"
+      cost_impact: "High - may lose 70%+ of user base if prolonged"
 
-  # Educational usage patterns (specific to tutoring app)
-  - alert: LowStudentEngagement
-    expr: rate(brainbytes_questions_total[30m]) < 0.1
+  # Data consumption alerts for limited data plans
+  - alert: ExcessiveDataConsumptionPhilippines
+    expr: |
+      sum(rate(brainbytes_data_consumption_bytes_sum[1h])) / 1024 / 1024 > 80
+    for: 20m
+    labels:
+      severity: warning
+      context: philippine_data_usage
+      impact: medium
+    annotations:
+      summary: "High data consumption affecting Filipino users"
+      description: "Application consuming more than 80MB/hour - exceeds typical data allowances"
+      impact: "Students with limited data plans may stop using the service"
+      remediation: "Activate aggressive compression, review media content sizes"
+      cost_impact: "Medium - affects user retention and satisfaction"
+
+  # Enhanced connectivity stability alerts
+  - alert: ConnectivityInstabilityPhilippines
+    expr: |
+      rate(brainbytes_connection_drops_total[10m]) > 8 and
+      avg(brainbytes_connection_stability_score) < 60
+    for: 5m
+    labels:
+      severity: warning
+      context: philippine_connectivity
+      impact: high
+    annotations:
+      summary: "Poor connectivity stability in Philippines"
+      description: "High connection drops with stability score below 60%"
+      impact: "Students experiencing frequent disconnections during study sessions"
+      remediation: "Enable offline mode, increase connection retry logic"
+      cost_impact: "Low infrastructure cost, high user satisfaction impact"
+
+  # School schedule aligned performance alerts
+  - alert: SchoolHoursPerformanceCritical
+    expr: |
+      (hour() >= 8 and hour() <= 17) and (
+        histogram_quantile(0.95, 
+          rate(brainbytes_peak_hour_response_time_seconds_bucket
+            {hour_category="school_hours"}[5m])
+        ) > 4
+      )
+    for: 2m
+    labels:
+      severity: critical
+      context: philippine_school_hours
+      impact: critical
+    annotations:
+      summary: "Critical performance during Philippine school hours"
+      description: "95th percentile response time exceeds 4 seconds during school hours (8 AM - 5 PM PHT)"
+      impact: "Teachers and students unable to use platform during class time"
+      remediation: "Scale infrastructure immediately, activate school-hours optimization"
+      cost_impact: "High - immediate scaling costs but prevents education disruption"
+
+  # Evening study peak with enhanced thresholds
+  - alert: EveningStudyPeakOverloadCritical
+    expr: |
+      (hour() >= 18 and hour() <= 22) and (
+        (rate(brainbytes_errors_total[5m]) > 0.08) or
+        (rate(brainbytes_ai_response_time_seconds_sum[5m]) / 
+         rate(brainbytes_ai_response_time_seconds_count[5m]) > 6) or
+        (brainbytes_school_hours_active_users > 150)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      context: philippine_peak_study
+      impact: critical
+    annotations:
+      summary: "Critical overload during Philippine evening study peak"
+      description: "High error rate, slow responses, or user overload during 6-10 PM PHT"
+      impact: "Students doing homework cannot get AI tutoring help"
+      remediation: "Emergency scaling, activate peak-hour AI model optimization"
+      cost_impact: "High - peak hour scaling costs but critical for core service"
+
+  # Weather-related service degradation
+  - alert: WeatherRelatedServiceDegradation
+    expr: |
+      (
+        rate(brainbytes_connection_drops_total{reason="network_timeout"}[20m]) > 12 and
+        rate(brainbytes_http_requests_total[1h]) < 
+        (rate(brainbytes_http_requests_total[24h] offset 24h) * 0.3)
+      )
+    for: 8m
+    labels:
+      severity: warning
+      context: philippine_weather
+      impact: medium
+    annotations:
+      summary: "Possible typhoon/weather-related service degradation"
+      description: "High network timeouts with 70%+ traffic reduction suggests weather impact"
+      impact: "Regional service disruption affecting students in storm areas"
+      remediation: "Activate weather contingency mode, enable extended offline features"
+      cost_impact: "Low - mainly operational adjustments, no major scaling needed"
+
+  # Regional power outage detection
+  - alert: RegionalPowerOutageDetected
+    expr: |
+      (
+        rate(brainbytes_http_requests_total[45m]) < 
+        (rate(brainbytes_http_requests_total[2h] offset 2h) * 0.15)
+      ) and (
+        rate(brainbytes_connection_drops_total[45m]) > 8
+      ) and (
+        brainbytes_school_hours_active_users < 10
+      )
+    for: 12m
+    labels:
+      severity: info
+      context: philippine_infrastructure
+      impact: low
+    annotations:
+      summary: "Regional power outage detected in Philippines"
+      description: "Severe traffic drop with connection issues during expected active hours"
+      impact: "Students in affected regions cannot access platform"
+      remediation: "Monitor for recovery, prepare catch-up materials, notify unaffected users"
+      cost_impact: "None - infrastructure issue, prepare for recovery surge"
+
+  # Cost optimization alerts
+  - alert: HighInfrastructureCostPhilippines
+    expr: |
+      brainbytes_cost_per_user_pesos{cost_category="infrastructure"} > 25
     for: 30m
     labels:
-      severity: info
+      severity: warning
+      context: philippine_cost_optimization
+      impact: medium
     annotations:
-      summary: "Low student engagement detected"
-      description: "Question rate is below 0.1 per minute for 30 minutes during typical study hours"
+      summary: "High infrastructure cost per user in Philippines"
+      description: "Infrastructure cost exceeds ₱25 per user per month"
+      impact: "Unsustainable unit economics for Filipino market"
+      remediation: "Review resource allocation, optimize during off-peak hours"
+      cost_impact: "Direct - affecting business sustainability"
 
-  # Mobile-first alerts (Philippines is mobile-first market)
-  - alert: LowMobileUsage
-    expr: (rate(brainbytes_mobile_requests_total[1h]) / rate(brainbytes_http_requests_total[1h])) * 100 < 70
-    for: 2h
-    labels:
-      severity: info
-    annotations:
-      summary: "Lower than expected mobile usage"
-      description: "Mobile requests are less than 70% of total traffic, which is unusual for Philippine market"
-
-  # Typhoon season / weather-related connectivity
-  - alert: UnusualTrafficDrop
-    expr: rate(brainbytes_http_requests_total[1h]) < (rate(brainbytes_http_requests_total[24h] offset 24h) * 0.3)
+  # Low data mode adoption
+  - alert: LowDataModeAdoptionCritical
+    expr: |
+      (
+        rate(brainbytes_low_data_mode_usage[4h]) / 
+        rate(brainbytes_mobile_requests_total[4h])
+      ) < 0.3
     for: 1h
     labels:
       severity: warning
+      context: philippine_data_optimization
+      impact: medium
     annotations:
-      summary: "Unusual traffic drop detected"
-      description: "Current traffic is less than 30% of same time yesterday, possibly due to weather or infrastructure issues"
+      summary: "Low adoption of data-saving features"
+      description: "Less than 30% of mobile users using data-saving features"
+      impact: "Users may abandon service due to data costs"
+      remediation: "Promote data-saving features, make them more discoverable"
+      cost_impact: "Indirect - affects user retention and growth"
 
-- name: philippine_business_hours
+# Enhanced business hours monitoring
+- name: philippines_business_hours_enhanced
   rules:
-  # School hours monitoring (Philippines school schedule)
-  - alert: SystemIssuesDuringSchoolHours
-    expr: (hour() >= 8 and hour() <= 17) and (up{job="brainbytes-backend"} == 0 or rate(brainbytes_errors_total[5m]) > 0.1)
-    for: 1m
+  
+  # Multi-metric school hours monitoring
+  - alert: SchoolHoursSystemFailure
+    expr: |
+      (hour() >= 8 and hour() <= 17) and (
+        (up{job="brainbytes-backend"} == 0) or
+        (rate(brainbytes_errors_total[3m]) > 0.15) or
+        (avg(brainbytes_connection_stability_score) < 40)
+      )
+    for: 30s
     labels:
       severity: critical
+      context: philippine_school_hours
+      impact: critical
     annotations:
-      summary: "System issues during school hours"
-      description: "Critical system problems detected during Philippine school hours (8 AM - 5 PM PHT)"
+      summary: "System failure during Philippine school hours"
+      description: "Critical system problems during prime educational hours (8 AM - 5 PM PHT)"
+      impact: "Complete disruption to classroom learning and teacher-led sessions"
+      remediation: "Emergency response protocol, immediate failover activation"
+      cost_impact: "High - emergency response costs but prevents education disruption"
 
-  # Weekend usage patterns
-  - alert: WeekendPerformanceIssues
-    expr: (day_of_week() == 0 or day_of_week() == 6) and rate(brainbytes_ai_response_time_seconds_sum[10m]) / rate(brainbytes_ai_response_time_seconds_count[10m]) > 8
+  # Weekend study pattern monitoring
+  - alert: WeekendStudyPerformanceIssues
+    expr: |
+      (day_of_week() == 0 or day_of_week() == 6) and (
+        histogram_quantile(0.90, 
+          rate(brainbytes_ai_response_time_seconds_bucket[15m])
+        ) > 10
+      )
+    for: 8m
+    labels:
+      severity: warning
+      context: philippine_weekend_study
+      impact: medium
+    annotations:
+      summary: "Performance issues during Filipino weekend study periods"
+      description: "AI response times degraded during weekend family study time"
+      impact: "Families using platform for weekend study experiencing poor service"
+      remediation: "Optimize weekend resource allocation, review AI model performance"
+      cost_impact: "Medium - weekend scaling adjustments needed"
+
+  # Lunch break usage surge
+  - alert: LunchBreakUsageSurge
+    expr: |
+      (hour() >= 12 and hour() <= 13) and (
+        rate(brainbytes_http_requests_total[5m]) > 
+        (rate(brainbytes_http_requests_total[1h] offset 1h) * 2)
+      )
+    for: 3m
+    labels:
+      severity: info
+      context: philippine_lunch_break
+      impact: low
+    annotations:
+      summary: "Lunch break usage surge detected"
+      description: "Traffic doubled during lunch break (12-1 PM PHT)"
+      impact: "Students using break time for quick study sessions"
+      remediation: "Monitor performance, consider lunch-time optimization"
+      cost_impact: "Low - informational for capacity planning"
+
+# Enhanced mobile-first alerts
+- name: philippines_mobile_first_enhanced
+  rules:
+  
+  # Mobile battery impact alert
+  - alert: MobileBatteryImpactHigh
+    expr: |
+      avg(brainbytes_mobile_battery_impact{platform="mobile"}) > 8
+    for: 15m
+    labels:
+      severity: warning
+      context: philippine_mobile_battery
+      impact: high
+    annotations:
+      summary: "High battery impact on Filipino mobile users"
+      description: "App consuming more than 8% battery per hour on mobile devices"
+      impact: "Students may stop using app to preserve phone battery"
+      remediation: "Optimize background processing, reduce CPU intensive operations"
+      cost_impact: "Low development cost, high user satisfaction impact"
+
+  # Mobile-first usage pattern validation
+  - alert: MobileUsagePatternAnomalous
+    expr: |
+      (
+        rate(brainbytes_mobile_requests_total[2h]) / 
+        rate(brainbytes_http_requests_total[2h])
+      ) * 100 < 75
+    for: 1h
+    labels:
+      severity: warning
+      context: philippine_mobile_pattern
+      impact: medium
+    annotations:
+      summary: "Mobile usage below expected Filipino market patterns"
+      description: "Mobile requests less than 75% of total - unusual for Philippines"
+      impact: "May indicate technical issues preventing mobile access"
+      remediation: "Check mobile app functionality, review mobile-specific errors"
+      cost_impact: "Low - diagnostic investigation needed"
+
+  # Slow network optimization effectiveness
+  - alert: SlowNetworkOptimizationIneffective
+    expr: |
+      histogram_quantile(0.95, 
+        rate(brainbytes_http_request_duration_seconds_bucket
+          {network_type="mobile"}[10m])
+      ) > 15
+    for: 5m
+    labels:
+      severity: critical
+      context: philippine_slow_network
+      impact: critical
+    annotations:
+      summary: "Slow network optimization failing for Filipino users"
+      description: "95th percentile mobile network response time exceeds 15 seconds"
+      impact: "Students on 2G/3G networks cannot use the platform"
+      remediation: "Emergency activation of ultra-low bandwidth mode"
+      cost_impact: "Medium - requires immediate optimization work"
+
+# Data usage and cost optimization
+- name: philippines_data_cost_optimization
+  rules:
+  
+  # Data savings ratio monitoring
+  - alert: DataSavingsRatioLow
+    expr: |
+      avg(brainbytes_data_savings_ratio{optimization_type="compression"}) < 0.6
+    for: 20m
+    labels:
+      severity: warning
+      context: philippine_data_savings
+      impact: medium
+    annotations:
+      summary: "Low data savings ratio for Filipino users"
+      description: "Compression achieving less than 60% data savings"
+      impact: "Higher data costs for users with limited data plans"
+      remediation: "Review compression algorithms, optimize content delivery"
+      cost_impact: "Indirect - affects user affordability and retention"
+
+  # Peak cost per user monitoring
+  - alert: PeakCostPerUserExceeded
+    expr: |
+      brainbytes_cost_per_user_pesos{time_period="peak_hours"} > 35
+    for: 45m
+    labels:
+      severity: critical
+      context: philippine_cost_control
+      impact: high
+    annotations:
+      summary: "Peak hour cost per user exceeded in Philippines"
+      description: "Cost per user during peak hours exceeds ₱35/month"
+      impact: "Unsustainable unit economics threatening service viability"
+      remediation: "Immediate cost optimization, review peak hour scaling strategy"
+      cost_impact: "Direct - threatening business model sustainability"
+
+  # Resource utilization efficiency
+  - alert: ResourceUtilizationInefficient
+    expr: |
+      avg(brainbytes_resource_utilization_ratio{resource_type="compute"}) < 0.4
+    for: 1h
+    labels:
+      severity: warning
+      context: philippine_resource_optimization
+      impact: medium
+    annotations:
+      summary: "Low resource utilization efficiency"
+      description: "Compute resource utilization below 40%"
+      impact: "Higher than necessary infrastructure costs"
+      remediation: "Optimize resource allocation, consider rightsizing"
+      cost_impact: "Direct - wasted infrastructure spending"
+
+# Predictive and seasonal alerts
+- name: philippines_predictive_monitoring
+  rules:
+  
+  # Exam period preparation
+  - alert: ExamPeriodTrafficSurgeExpected
+    expr: |
+      day_of_month() >= 15 and day_of_month() <= 25 and (
+        rate(brainbytes_http_requests_total[24h]) > 
+        (rate(brainbytes_http_requests_total[168h] offset 168h) * 1.5)
+      )
+    for: 2h
+    labels:
+      severity: info
+      context: philippine_exam_period
+      impact: low
+    annotations:
+      summary: "Exam period traffic surge detected"
+      description: "Traffic 50% above normal during typical exam period"
+      impact: "Increased demand expected, prepare for scaling"
+      remediation: "Prepare additional capacity, optimize AI response times"
+      cost_impact: "Medium - predictable scaling costs"
+
+  # Seasonal connectivity pattern
+  - alert: SeasonalConnectivityDegradation
+    expr: |
+      avg_over_time(brainbytes_connection_stability_score[7d]) < 
+      avg_over_time(brainbytes_connection_stability_score[30d] offset 30d) * 0.8
+    for: 24h
+    labels:
+      severity: info
+      context: philippine_seasonal
+      impact: low
+    annotations:
+      summary: "Seasonal connectivity degradation detected"
+      description: "Connection stability 20% below historical average"
+      impact: "Possible weather season or infrastructure maintenance impact"
+      remediation: "Monitor regional patterns, prepare resilience measures"
+      cost_impact: "Low - mainly operational adjustments"
+
+# Recovery and resilience monitoring
+- name: philippines_recovery_monitoring
+  rules:
+  
+  # Service recovery time
+  - alert: ServiceRecoveryTimeSlow
+    expr: |
+      avg(brainbytes_scaling_response_time_seconds{scaling_direction="up"}) > 180
     for: 5m
     labels:
       severity: warning
+      context: philippine_recovery
+      impact: medium
     annotations:
-      summary: "Performance issues during weekend study time"
-      description: "AI response times are degraded during weekend study periods"
+      summary: "Slow service recovery time in Philippines"
+      description: "Infrastructure scaling taking longer than 3 minutes"
+      impact: "Extended service disruption during recovery"
+      remediation: "Review autoscaling configuration, optimize scaling triggers"
+      cost_impact: "Medium - slower recovery means longer disruption"
+
+  # Sync delay after connectivity restoration
+  - alert: PostConnectivitySyncDelayHigh
+    expr: |
+      histogram_quantile(0.90, 
+        rate(brainbytes_sync_delays_seconds_bucket
+          {network_condition="recovering"}[10m])
+      ) > 120
+    for: 3m
+    labels:
+      severity: warning
+      context: philippine_sync_recovery
+      impact: medium
+    annotations:
+      summary: "High sync delays after connectivity restoration"
+      description: "90th percentile sync delay exceeds 2 minutes during recovery"
+      impact: "Users waiting long times for data sync after reconnection"
+      remediation: "Optimize sync prioritization, implement progressive sync"
+      cost_impact: "Low - mainly UX optimization needed"

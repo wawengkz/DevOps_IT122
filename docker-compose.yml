@@ -18,6 +18,10 @@ services:
       start_period: 90s
     networks:
       - brainbytes-network
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.port=3000"
+      - "monitoring.path=/metrics"
 
   backend:
     build: ./backend
@@ -31,12 +35,18 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - MONGODB_URI=mongodb://mongo:27017/brainbytes
       - PORT=3000
+      - PROMETHEUS_ENABLED=true
+      - METRICS_PORT=3000
     depends_on:
       mongo:
         condition: service_healthy
     restart: "no"
     networks:
       - brainbytes-network
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.port=3000"
+      - "monitoring.path=/metrics"
 
   mongo:
     image: mongo:4.4
@@ -55,31 +65,43 @@ services:
     networks:
       - brainbytes-network
 
-  # Prometheus monitoring
+  # Enhanced Prometheus monitoring
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: prom/prometheus:v2.48.0
     container_name: prometheus
     ports:
       - "9091:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
-      - prometheus-data:/prometheus
       - ./monitoring/philippines_alerts.yml:/etc/prometheus/philippines_alerts.yml
+      - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml
+      - ./monitoring/blackbox.yml:/etc/prometheus/blackbox.yml
+      - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
       - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--storage.tsdb.wal-compression'
+      - '--query.max-concurrency=50'
+      - '--query.max-samples=50000000'
     restart: unless-stopped
     networks:
       - brainbytes-network
+    depends_on:
+      - backend
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=prometheus"
 
-  # Alertmanager for handling alerts
+  # Enhanced Alertmanager
   alertmanager:
-    image: prom/alertmanager:v0.25.0
+    image: prom/alertmanager:v0.26.0
     container_name: alertmanager
     ports:
       - "9093:9093"
@@ -90,13 +112,20 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
       - '--web.external-url=http://localhost:9093'
+      - '--cluster.advertise-address=0.0.0.0:9093'
+      - '--log.level=debug'
     restart: unless-stopped
     networks:
       - brainbytes-network
+    depends_on:
+      - prometheus
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=alertmanager"
 
-  # Node Exporter for host metrics
+  # Enhanced Node Exporter
   node-exporter:
-    image: prom/node-exporter:v1.6.1
+    image: prom/node-exporter:v1.7.0
     container_name: node-exporter
     ports:
       - "9100:9100"
@@ -109,9 +138,92 @@ services:
       - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.netdev.device-exclude=^lo$$'
+      - '--collector.textfile.directory=/var/lib/node_exporter/textfile_collector'
     restart: unless-stopped
     networks:
       - brainbytes-network
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=node_exporter"
+
+  # MongoDB Exporter for database metrics
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.40.0
+    container_name: mongodb-exporter
+    ports:
+      - "9216:9216"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017
+    depends_on:
+      - mongo
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=mongodb_exporter"
+
+  # Blackbox exporter for endpoint monitoring
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: blackbox-exporter
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml
+    command:
+      - '--config.file=/etc/blackbox_exporter/config.yml'
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=blackbox_exporter"
+
+  # Activity simulator for testing metrics
+  activity-simulator:
+    build: ./backend
+    container_name: activity-simulator
+    volumes:
+      - ./backend:/usr/src/app
+      - backend_node_modules:/usr/src/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - SIMULATION_MODE=true
+    command: ["node", "simulate-activity.js"]
+    depends_on:
+      - backend
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
+    profiles:
+      - simulation
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=simulator"
+
+  # Alert webhook receiver
+  alert-receiver:
+    build: ./backend
+    container_name: alert-receiver
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./backend:/usr/src/app
+      - backend_node_modules:/usr/src/app/node_modules
+    environment:
+      - NODE_ENV=development
+    command: ["node", "alert-receiver.js"]
+    depends_on:
+      - alertmanager
+    restart: unless-stopped
+    networks:
+      - brainbytes-network
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=alert_receiver"
 
 volumes:
   mongo-data:
@@ -123,3 +235,6 @@ volumes:
 networks:
   brainbytes-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

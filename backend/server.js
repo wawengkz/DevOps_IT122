@@ -54,25 +54,29 @@ mongoose
   .then(() => {
     console.log("Connected to MongoDB");
     if (metricsAvailable) {
-      metrics.dbConnections.labels("active").set(1);
+      // FIX: Use correct number of labels for dbConnections gauge
+      metrics.dbConnections.labels("active", "mongodb").set(1);
     }
   })
   .catch((err) => {
     console.error("Failed to connect to MongoDB:", err);
     if (metricsAvailable) {
-      metrics.dbConnections.labels("active").set(0);
-      metrics.errorCounter.labels("database", "connection").inc();
+      // FIX: Use correct number of labels for dbConnections gauge
+      metrics.dbConnections.labels("inactive", "mongodb").set(0);
+      metrics.errorCounter.labels("database", "connection", "critical").inc();
     }
   });
 
 // Monitor MongoDB connection state
 if (metricsAvailable) {
   mongoose.connection.on("connected", () => {
-    metrics.dbConnections.labels("active").set(1);
+    // FIX: Use correct number of labels for dbConnections gauge
+    metrics.dbConnections.labels("active", "mongodb").set(1);
   });
 
   mongoose.connection.on("disconnected", () => {
-    metrics.dbConnections.labels("active").set(0);
+    // FIX: Use correct number of labels for dbConnections gauge
+    metrics.dbConnections.labels("inactive", "mongodb").set(0);
   });
 }
 
@@ -150,7 +154,7 @@ app.get("/api/messages", async (req, res) => {
     res.json(messages);
   } catch (err) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/messages").inc();
+      metrics.errorCounter.labels("database", "/api/messages", "error").inc();
     }
     res.status(500).json({ error: err.message });
   }
@@ -187,7 +191,7 @@ app.post("/api/messages", async (req, res) => {
     ]).catch((error) => {
       console.error("AI response timed out or failed:", error);
       if (metricsAvailable) {
-        metrics.errorCounter.labels("ai_timeout", "/api/messages").inc();
+        metrics.errorCounter.labels("ai_timeout", "/api/messages", "error").inc();
       }
       return {
         category: "error",
@@ -212,13 +216,14 @@ app.post("/api/messages", async (req, res) => {
             : "advanced";
 
       metrics.aiResponseTimeHistogram
-        .labels(category, complexity)
+        .labels(category, complexity, "gpt-3.5")
         .observe(aiDuration);
       metrics.questionCounter
         .labels(
           category,
           "unknown",
           aiResult.category === "error" ? "failed" : "answered",
+          "multiple_choice"
         )
         .inc();
     }
@@ -247,7 +252,7 @@ app.post("/api/messages", async (req, res) => {
   } catch (err) {
     console.error("Error in /api/messages route:", err);
     if (metricsAvailable) {
-      metrics.errorCounter.labels("general", "/api/messages").inc();
+      metrics.errorCounter.labels("general", "/api/messages", "error").inc();
     }
     res.status(400).json({ error: err.message });
   }
@@ -261,7 +266,7 @@ app.post("/api/users", async (req, res) => {
     res.json({ success: true, user: result });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("validation", "/api/users").inc();
+      metrics.errorCounter.labels("validation", "/api/users", "error").inc();
     }
     res.status(400).json({ success: false, error: error.message });
   }
@@ -273,7 +278,7 @@ app.get("/api/users", async (req, res) => {
     res.json({ success: true, users });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/users").inc();
+      metrics.errorCounter.labels("database", "/api/users", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -289,7 +294,7 @@ app.get("/api/users/:id", async (req, res) => {
     res.json({ success: true, user });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/users/:id").inc();
+      metrics.errorCounter.labels("database", "/api/users/:id", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -307,7 +312,7 @@ app.put("/api/users/:id", async (req, res) => {
     res.json({ success: true, user });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/users/:id").inc();
+      metrics.errorCounter.labels("database", "/api/users/:id", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -323,7 +328,7 @@ app.delete("/api/users/:id", async (req, res) => {
     res.json({ success: true, message: "User deleted successfully" });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/users/:id").inc();
+      metrics.errorCounter.labels("database", "/api/users/:id", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -337,13 +342,13 @@ app.post("/api/materials", async (req, res) => {
 
     // Record tutoring session metric based on subject
     if (metricsAvailable && req.body.subject) {
-      metrics.tutoringSessions.labels(req.body.subject, "unknown").inc();
+      metrics.tutoringSessions.labels(req.body.subject, "unknown", "regular").inc();
     }
 
     res.json({ success: true, material: result });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("validation", "/api/materials").inc();
+      metrics.errorCounter.labels("validation", "/api/materials", "error").inc();
     }
     res.status(400).json({ success: false, error: error.message });
   }
@@ -360,7 +365,7 @@ app.get("/api/materials", async (req, res) => {
     res.json({ success: true, materials });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/materials").inc();
+      metrics.errorCounter.labels("database", "/api/materials", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -376,7 +381,7 @@ app.get("/api/materials/:id", async (req, res) => {
     res.json({ success: true, material });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/materials/:id").inc();
+      metrics.errorCounter.labels("database", "/api/materials/:id", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -396,7 +401,7 @@ app.put("/api/materials/:id", async (req, res) => {
     res.json({ success: true, material });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/materials/:id").inc();
+      metrics.errorCounter.labels("database", "/api/materials/:id", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
@@ -412,7 +417,7 @@ app.delete("/api/materials/:id", async (req, res) => {
     res.json({ success: true, message: "Material deleted successfully" });
   } catch (error) {
     if (metricsAvailable) {
-      metrics.errorCounter.labels("database", "/api/materials/:id").inc();
+      metrics.errorCounter.labels("database", "/api/materials/:id", "error").inc();
     }
     res.status(500).json({ success: false, error: error.message });
   }
