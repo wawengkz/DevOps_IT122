@@ -123,6 +123,35 @@ services:
       - "monitoring.enable=true"
       - "monitoring.type=alertmanager"
 
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: grafana
+    ports:
+      - "3001:3000"  # Changed to avoid conflict with backend
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=brainbytes2024
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_HTTP_PORT=3000
+      - GF_SERVER_PROTOCOL=http
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel
+    networks:
+      - brainbytes-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    labels:
+      - "monitoring.enable=true"
+      - "monitoring.type=grafana"
+
   # Enhanced Node Exporter
   node-exporter:
     image: prom/node-exporter:v1.7.0
@@ -231,6 +260,7 @@ volumes:
   frontend_node_modules:
   prometheus-data:
   alertmanager-data:
+  grafana-data:  # Added Grafana data volume
 
 networks:
   brainbytes-network:
