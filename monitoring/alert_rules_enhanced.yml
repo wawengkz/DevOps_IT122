@@ -1,0 +1,278 @@
+groups:
+# === CRITICAL INFRASTRUCTURE ALERTS (Layered Thresholds) ===
+- name: brainbytes_critical_infrastructure_layered
+  rules:
+  
+  # Service Down - Immediate Response Required
+  - alert: CriticalServiceDownImmediate
+    expr: up{job="brainbytes-backend"} == 0
+    for: 15s
+    labels:
+      severity: critical
+      tier: infrastructure
+      impact: total_outage
+      escalation: immediate
+      runbook: "service_down_critical"
+    annotations:
+      summary: "🚨 CRITICAL: BrainBytes service completely down"
+      description: "Main BrainBytes service has been down for 15+ seconds. IMMEDIATE ACTION REQUIRED."
+      impact: "Complete service outage - all students and teachers cannot access platform"
+      cost_impact: "HIGH - Revenue loss ₱500+/minute during peak hours"
+      troubleshooting_url: "https://runbooks.brainbytes.local/service-down"
+
+  # Database Connection - Layered Alerts
+  - alert: DatabaseConnectionWarning
+    expr: brainbytes_db_connections{status="active"} < 5
+    for: 1m
+    labels:
+      severity: warning
+      tier: infrastructure
+      evaluation_period: 1m
+    annotations:
+      summary: "⚠️ Low database connections available"
+      description: "Only {{ $value }} active database connections remaining"
+      
+  - alert: DatabaseConnectionCritical
+    expr: brainbytes_db_connections{status="active"} == 0
+    for: 20s
+    labels:
+      severity: critical
+      tier: infrastructure
+      impact: data_unavailable
+      runbook: "database_connection_lost"
+    annotations:
+      summary: "🗄️ CRITICAL: Database connection completely lost"
+      description: "MongoDB connection lost for 20+ seconds"
+      impact: "No data access - users cannot ask questions or access content"
+
+  # High Error Rate - Graduated Thresholds
+  - alert: ErrorRateElevated
+    expr: rate(brainbytes_errors_total[5m]) > 0.05
+    for: 3m
+    labels:
+      severity: warning
+      tier: application
+      evaluation_period: 3m
+    annotations:
+      summary: "⚠️ Elevated error rate detected"
+      description: "Error rate: {{ $value | humanizePercentage }} (threshold: 5%)"
+      
+  - alert: ErrorRateHigh
+    expr: rate(brainbytes_errors_total[5m]) > 0.1
+    for: 2m
+    labels:
+      severity: warning
+      tier: application
+      evaluation_period: 2m
+    annotations:
+      summary: "🔥 High error rate detected"
+      description: "Error rate: {{ $value | humanizePercentage }} (threshold: 10%)"
+      
+  - alert: ErrorRateCritical
+    expr: rate(brainbytes_errors_total[5m]) > 0.2
+    for: 1m
+    labels:
+      severity: critical
+      tier: application
+      evaluation_period: 1m
+      runbook: "high_error_rate"
+    annotations:
+      summary: "🚨 CRITICAL: Very high error rate"
+      description: "Error rate: {{ $value | humanizePercentage }} (threshold: 20%)"
+      impact: "Students experiencing frequent failures when asking questions"
+
+# === BUSINESS-LEVEL ALERTS ===
+- name: brainbytes_business_experience_alerts
+  rules:
+  
+  # User Experience - AI Response Time
+  - alert: AIResponseDegradedExperience
+    expr: histogram_quantile(0.95, rate(brainbytes_ai_response_time_seconds_bucket[5m])) > 8
+    for: 5m
+    labels:
+      severity: warning
+      tier: user_experience
+      business_impact: learning_disruption
+    annotations:
+      summary: "🤖 AI responses affecting user experience"
+      description: "95th percentile AI response time: {{ $value }}s (degraded threshold: 8s)"
+      impact: "Students experiencing slower AI tutoring responses"
+      business_impact: "Reduced learning effectiveness and user satisfaction"
+      
+  - alert: AIResponseUserExperienceFailure
+    expr: histogram_quantile(0.95, rate(brainbytes_ai_response_time_seconds_bucket[5m])) > 15
+    for: 2m
+    labels:
+      severity: critical
+      tier: user_experience
+      business_impact: severe_learning_disruption
+      runbook: "ai_response_critical"
+    annotations:
+      summary: "🚨 CRITICAL: AI responses severely impacting learning"
+      description: "95th percentile AI response time: {{ $value }}s (critical threshold: 15s)"
+      impact: "Students abandoning sessions due to slow AI responses"
+      business_impact: "Severe impact on core learning experience"
+
+  # Session Abandonment Detection
+  - alert: HighSessionAbandonmentRate
+    expr: |
+      (
+        rate(brainbytes_user_actions_total{action_type="session_start"}[10m]) - 
+        rate(brainbytes_user_actions_total{action_type="session_end"}[10m])
+      ) / rate(brainbytes_user_actions_total{action_type="session_start"}[10m]) > 0.3
+    for: 5m
+    labels:
+      severity: warning
+      tier: user_experience
+      business_impact: user_retention
+    annotations:
+      summary: "📱 High session abandonment rate detected"
+      description: "{{ $value | humanizePercentage }} of sessions not completing normally"
+      impact: "Users leaving platform mid-session - poor experience indicator"
+      business_impact: "Affects user retention and learning outcomes"
+
+  # Learning Outcome Degradation
+  - alert: LearningOutcomeDegradation
+    expr: |
+      rate(brainbytes_learning_outcomes_total{outcome_type="concept_mastered"}[1h]) < 
+      (rate(brainbytes_learning_outcomes_total{outcome_type="concept_mastered"}[24h] offset 24h) * 0.5)
+    for: 30m
+    labels:
+      severity: warning
+      tier: educational_effectiveness
+      business_impact: learning_quality
+    annotations:
+      summary: "📚 Learning outcome achievement below normal"
+      description: "Concept mastery rate 50% below yesterday's average"
+      impact: "Students not achieving expected learning outcomes"
+      business_impact: "Core educational effectiveness declining"
+
+  # No Student Activity (Business Critical)
+  - alert: NoStudentActivityCritical
+    expr: rate(brainbytes_questions_total[15m]) == 0
+    for: 15m
+    labels:
+      severity: critical
+      tier: business_critical
+      business_impact: revenue_loss
+      time_sensitive: true
+    annotations:
+      summary: "🎓 CRITICAL: No student questions for 15 minutes"
+      description: "Zero questions asked in last 15 minutes during expected active hours"
+      impact: "Complete absence of core platform usage"
+      business_impact: "Potential revenue loss and platform adoption issues"
+
+# === RESOURCE AND PERFORMANCE ALERTS ===
+- name: brainbytes_resource_performance_layered
+  rules:
+  
+  # Memory Usage - Layered Thresholds
+  - alert: MemoryUsageElevated
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 70
+    for: 5m
+    labels:
+      severity: info
+      tier: resources
+    annotations:
+      summary: "💾 Memory usage elevated"
+      description: "Memory usage: {{ $value }}% (elevated threshold: 70%)"
+      
+  - alert: MemoryUsageHigh
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+    for: 3m
+    labels:
+      severity: warning
+      tier: resources
+    annotations:
+      summary: "💾 High memory usage"
+      description: "Memory usage: {{ $value }}% (warning threshold: 85%)"
+      
+  - alert: MemoryUsageCritical
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+    for: 1m
+    labels:
+      severity: critical
+      tier: resources
+      runbook: "memory_exhaustion"
+    annotations:
+      summary: "💾 CRITICAL: Memory exhaustion imminent"
+      description: "Memory usage: {{ $value }}% (critical threshold: 95%)"
+      impact: "System may become unresponsive or crash"
+
+  # Container Resource Limits
+  - alert: ContainerNearMemoryLimit
+    expr: |
+      (container_memory_usage_bytes{name="brainbytes-backend"} / 1024 / 1024) > 800
+    for: 3m
+    labels:
+      severity: warning
+      tier: container_resources
+    annotations:
+      summary: "🐳 Backend container approaching memory limit"
+      description: "Container using {{ $value }}MB (warning at 800MB)"
+      impact: "Container may be killed by Docker if it exceeds limits"
+
+# === ALERT GROUPING PREVENTION ===
+- name: brainbytes_alert_storm_prevention
+  rules:
+  
+  # Multiple Service Issues
+  - alert: MultipleServiceIssuesDetected
+    expr: |
+      count(
+        ALERTS{alertname=~".*Critical.*", alertstate="firing"}
+      ) >= 3
+    for: 2m
+    labels:
+      severity: critical
+      tier: meta_alert
+      alert_storm: true
+    annotations:
+      summary: "🌪️ ALERT STORM: Multiple critical issues detected"
+      description: "{{ $value }} critical alerts firing simultaneously"
+      impact: "Widespread system issues - coordinate response needed"
+      action: "Activate incident response protocol, coordinate team response"
+
+# === BUSINESS HOURS CONTEXT ALERTS ===
+- name: brainbytes_business_hours_context
+  rules:
+  
+  # School Hours Service Issues (Philippines Time)
+  - alert: SchoolHoursServiceIssue
+    expr: |
+      (hour() >= 8 and hour() <= 17) and (
+        (up{job="brainbytes-backend"} == 0) or
+        (rate(brainbytes_errors_total[2m]) > 0.1) or
+        (histogram_quantile(0.95, rate(brainbytes_ai_response_time_seconds_bucket[5m])) > 10)
+      )
+    for: 1m
+    labels:
+      severity: critical
+      tier: business_hours
+      context: philippine_school_hours
+      business_impact: education_disruption
+    annotations:
+      summary: "🏫 CRITICAL: Service issues during Philippine school hours"
+      description: "System problems during prime educational hours (8 AM - 5 PM PHT)"
+      impact: "Disruption to active classroom learning and teacher-led sessions"
+      urgency: "HIGH - affects active learning sessions"
+
+  # Evening Study Peak Issues
+  - alert: EveningStudyPeakIssues
+    expr: |
+      (hour() >= 18 and hour() <= 22) and (
+        (rate(brainbytes_errors_total[3m]) > 0.08) or
+        (brainbytes_active_sessions > 200 and 
+         histogram_quantile(0.95, rate(brainbytes_ai_response_time_seconds_bucket[5m])) > 8)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      tier: peak_hours
+      context: philippine_evening_study
+      business_impact: homework_disruption
+    annotations:
+      summary: "🌅 Peak hour performance issues detected"
+      description: "Performance degradation during evening study peak (6-10 PM PHT)"
+      impact: "Students unable to get homework help during peak study time"
+      business_impact: "Affects primary use case during highest traffic period"

@@ -1,0 +1,65 @@
+groups:
+# Performance SLI Recording Rules
+- name: brainbytes_sli_recording
+  interval: 30s
+  rules:
+  
+  # Request rate SLI
+  - record: brainbytes:request_rate_5m
+    expr: sum(rate(brainbytes_http_requests_total[5m]))
+    
+  # Error rate SLI  
+  - record: brainbytes:error_rate_5m
+    expr: sum(rate(brainbytes_errors_total[5m])) / sum(rate(brainbytes_http_requests_total[5m]))
+    
+  # AI response time SLI (95th percentile)
+  - record: brainbytes:ai_response_time_p95_5m
+    expr: histogram_quantile(0.95, sum(rate(brainbytes_ai_response_time_seconds_bucket[5m])) by (le))
+    
+  # HTTP response time SLI (95th percentile)
+  - record: brainbytes:http_response_time_p95_5m
+    expr: histogram_quantile(0.95, sum(rate(brainbytes_http_request_duration_seconds_bucket[5m])) by (le))
+    
+  # Active user ratio
+  - record: brainbytes:active_user_ratio_5m
+    expr: sum(brainbytes_active_users) / sum(brainbytes_active_sessions)
+
+# Business Metrics Recording Rules
+- name: brainbytes_business_recording
+  interval: 60s
+  rules:
+  
+  # Questions per minute
+  - record: brainbytes:questions_per_minute
+    expr: sum(rate(brainbytes_questions_total[1m])) * 60
+    
+  # Learning outcomes per hour
+  - record: brainbytes:learning_outcomes_per_hour
+    expr: sum(rate(brainbytes_learning_outcomes_total[1h])) * 3600
+    
+  # Mobile usage percentage
+  - record: brainbytes:mobile_usage_percentage
+    expr: |
+      (
+        sum(rate(brainbytes_mobile_requests_total[5m])) / 
+        sum(rate(brainbytes_http_requests_total[5m]))
+      ) * 100
+
+# Cost and Resource Recording Rules
+- name: brainbytes_resource_recording
+  interval: 300s
+  rules:
+  
+  # Average memory utilization
+  - record: brainbytes:memory_utilization_avg
+    expr: avg((1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100)
+    
+  # Average CPU utilization
+  - record: brainbytes:cpu_utilization_avg
+    expr: avg(100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100))
+    
+  # Database connection utilization
+  - record: brainbytes:db_connection_utilization
+    expr: |
+      sum(brainbytes_db_connections{status="active"}) / 
+      (sum(brainbytes_db_connections{status="active"}) + sum(brainbytes_db_connections{status="idle"}))

@@ -1,21 +1,28 @@
-# Prometheus Configuration for BrainBytes Application
+# Enhanced Prometheus Configuration for BrainBytes Application
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    cluster: 'brainbytes-dev'
+    region: 'philippines'
 
-# Alertmanager configuration
+# Enhanced Alertmanager configuration
 alerting:
   alertmanagers:
     - static_configs:
         - targets:
           - alertmanager:9093
+      timeout: 10s
+      api_version: v2
 
-# Load rules once and periodically evaluate them according to the global 'evaluation_interval'
+# Enhanced rule files with layered alerting
 rule_files:
-  - "alert_rules.yml"
-  - "philippines_alerts.yml" 
+  - "alert_rules.yml"                    # Your existing basic rules
+  - "alert_rules_enhanced.yml"           # NEW: Enhanced layered rules
+  - "philippines_alerts.yml"             # Your existing Philippine-specific rules
+  - "recording_rules.yml"                # NEW: Performance recording rules
 
-# Scrape configuration
+# Enhanced scrape configuration
 scrape_configs:
   # Prometheus itself
   - job_name: 'prometheus'
@@ -23,16 +30,21 @@ scrape_configs:
       - targets: ['localhost:9090']
         labels:
           app: 'prometheus'
+          tier: 'monitoring'
 
-  # BrainBytes Backend API
+  # BrainBytes Backend API - Enhanced
   - job_name: 'brainbytes-backend'
     static_configs:
       - targets: ['backend:3000']
         labels:
           app: 'brainbytes-backend'
           service: 'api'
-    metrics_path: '/metrics'  # Default path, adjust if your app exposes metrics elsewhere
-    scrape_interval: 15s
+          tier: 'application'
+          business_critical: 'true'
+    metrics_path: '/metrics'
+    scrape_interval: 10s                 # More frequent for business critical
+    scrape_timeout: 8s
+    honor_labels: true
 
   # BrainBytes Frontend
   - job_name: 'brainbytes-frontend'
@@ -41,21 +53,63 @@ scrape_configs:
         labels:
           app: 'brainbytes-frontend'
           service: 'web'
+          tier: 'presentation'
     metrics_path: '/metrics'
     scrape_interval: 15s
 
-  # Node Exporter for host-level metrics
+  # Enhanced Node Exporter
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['node-exporter:9100']
         labels:
           app: 'node-exporter'
           service: 'system-metrics'
+          tier: 'infrastructure'
+    scrape_interval: 10s
 
-  # MongoDB metrics (commented out - can be added later)
-  # - job_name: 'mongodb'
-  #   static_configs:
-  #     - targets: ['mongodb-exporter:9216']
-  #       labels:
-  #         app: 'mongodb'
-  #         service: 'database'
+  # MongoDB Exporter
+  - job_name: 'mongodb-exporter'
+    static_configs:
+      - targets: ['mongodb-exporter:9216']
+        labels:
+          app: 'mongodb'
+          service: 'database'
+          tier: 'data'
+          business_critical: 'true'
+    scrape_interval: 15s
+
+  # Blackbox Exporter for endpoint monitoring
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://backend:3000/health
+        - http://backend:3000/
+        - http://frontend:3000/
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Alert Receiver monitoring
+  - job_name: 'alert-receiver'
+    static_configs:
+      - targets: ['alert-receiver:5001']
+        labels:
+          app: 'alert-receiver'
+          service: 'monitoring'
+          tier: 'alerting'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+# Remote write configuration (for external monitoring - optional)
+# remote_write:
+#   - url: "https://prometheus-remote-write-endpoint"
+#     basic_auth:
+#       username: "user"
+#       password: "pass"
