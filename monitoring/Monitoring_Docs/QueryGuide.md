@@ -26,7 +26,7 @@ rate(brainbytes_questions_total[5m])
 rate(brainbytes_http_requests_total[5m])
 
 # Errors per second
-rate(brainbytes_errors_total[5m])
+
 ```
 
 ### 3. Aggregation Queries
