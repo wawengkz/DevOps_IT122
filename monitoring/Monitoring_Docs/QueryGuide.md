@@ -31,7 +31,7 @@ rate(brainbytes_http_requests_total[5m])
 
 ### 3. Aggregation Queries
 ```promql
-# Total active sessions across all subjects
+# Total active sessions across all 
 sum(brainbytes_active_sessions)
 
 # Questions by subject
